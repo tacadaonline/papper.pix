@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Paper.io Real-Time Prototype</title>
+    <title>Paper.io 360° Prototype</title>
     <style>
         body {
             margin: 0;
@@ -12,7 +12,7 @@
             color: #fff;
             font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
             overflow: hidden;
-            touch-action: none; /* Impede zoom e rolagem nativa no celular */
+            touch-action: none;
         }
         #painel {
             position: fixed;
@@ -54,7 +54,6 @@
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         
-        // Ajusta o tamanho do canvas dinamicamente para tela cheia
         function redimensionarCanvas() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
@@ -93,9 +92,8 @@
                     renderDados.players[id] = { ...sPlayer };
                 } else {
                     const rPlayer = renderDados.players[id];
-                    // Interpolação suave de movimento
-                    rPlayer.x += (sPlayer.x - rPlayer.x) * 0.25;
-                    rPlayer.y += (sPlayer.y - rPlayer.y) * 0.25;
+                    rPlayer.x += (sPlayer.x - rPlayer.x) * 0.3; // Interpolação mais rápida para agilidade
+                    rPlayer.y += (sPlayer.y - rPlayer.y) * 0.3;
                     rPlayer.color = sPlayer.color;
                     rPlayer.trail = sPlayer.trail;
                     rPlayer.alive = sPlayer.alive;
@@ -113,49 +111,39 @@
         function desenharJogo() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Encontra o seu jogador para centralizar a câmera nele
             const meuJogador = renderDados.players[meuId];
-            
-            // Posição padrão caso o jogador ainda não tenha carregado
             let camX = servidoresDados.mapSize / 2 - canvas.width / 2;
             let camY = servidoresDados.mapSize / 2 - canvas.height / 2;
 
             if (meuJogador) {
-                // Centraliza a câmera no quadrado do jogador
                 camX = meuJogador.x - canvas.width / 2;
                 camY = meuJogador.y - canvas.height / 2;
             }
 
             ctx.save();
-            // Move todo o contexto do Canvas na direção oposta da câmera
             ctx.translate(-camX, -camY);
 
             const MAP_SIZE = servidoresDados.mapSize || 3000;
 
-            // 1. Desenha o fundo do mapa gigante
             ctx.fillStyle = '#14141c';
             ctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
 
-            // 2. Linhas de grade (Apenas dentro do mapa gigante)
             ctx.strokeStyle = "rgba(255, 255, 255, 0.02)";
             ctx.lineWidth = 1;
             for (let x = 0; x <= MAP_SIZE; x += 50) {
                 ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, MAP_SIZE); ctx.stroke();
             }
             for (let y = 0; y <= MAP_SIZE; y += 50) {
-                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(MAP_SIZE, y); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, MAP_SIZE); ctx.stroke();
             }
 
-            // 3. Bordas perigosas do mapa (Fim do mundo)
             ctx.strokeStyle = '#ff3344';
             ctx.lineWidth = 5;
             ctx.strokeRect(0, 0, MAP_SIZE, MAP_SIZE);
 
-            // 4. Desenha as trilhas e os jogadores
             Object.values(renderDados.players).forEach(player => {
                 if (!player.alive) return;
 
-                // Desenha a Trilha com Brilho Neon
                 if (player.trail.length > 1) {
                     ctx.beginPath();
                     ctx.strokeStyle = player.color;
@@ -173,7 +161,6 @@
                     ctx.shadowBlur = 0; 
                 }
 
-                // Desenha a Cabeça (Quadrado do Jogador)
                 ctx.fillStyle = player.color;
                 ctx.beginPath();
                 ctx.roundRect(player.x - 14, player.y - 14, 28, 28, 6);
@@ -191,7 +178,7 @@
                 }
             });
 
-            ctx.restore(); // Restaura para manter o painel fixo no topo da tela
+            ctx.restore();
         }
 
         // CONTROLE DO TECLADO (PC)
@@ -205,26 +192,45 @@
             if (dx !== 0 || dy !== 0) EnviarMovimento(dx, dy);
         });
 
-        // CONTROLE POR TOQUE/DESLIZAR (CELULAR)
-        let touchStartX = 0;
-        let touchStartY = 0;
+        // 🆕 NOVO CONTROLE TOQUE LIVRE (360 GRAUS PARA CELULAR)
+        let touchId = null;
+        let tStartX = 0;
+        let tStartY = 0;
+
         window.addEventListener('touchstart', (e) => {
-            touchStartX = e.touches[0].clientX;
-            touchStartY = e.touches[0].clientY;
+            if (touchId === null) {
+                const touch = e.changedTouches[0];
+                touchId = touch.identifier;
+                tStartX = touch.clientX;
+                tStartY = touch.clientY;
+            }
         }, { passive: true });
 
+        window.addEventListener('touchmove', (e) => {
+            for (let i = 0; i < e.touches.length; i++) {
+                if (e.touches[i].identifier === touchId) {
+                    const touch = e.touches[i];
+                    
+                    // Calcula a distância do arrasto em relação ao ponto inicial do toque
+                    const diffX = touch.clientX - tStartX;
+                    const diffY = touch.clientY - tStartY;
+                    const dist = Math.hypot(diffX, diffY);
+
+                    // Só move se o arrasto passar de uma pequena zona morta para evitar tremores
+                    if (dist > 10) {
+                        // Transforma a direção em um vetor unitário livre (valores decimais entre -1 e 1)
+                        const dx = diffX / dist;
+                        const dy = diffY / dist;
+                        EnviarMovimento(dx, dy);
+                    }
+                }
+            }
+        }, { passive: none });
+
         window.addEventListener('touchend', (e) => {
-            const diffX = e.changedTouches[0].clientX - touchStartX;
-            const diffY = e.changedTouches[0].clientY - touchStartY;
-            
-            // Verifica se o movimento foi longo o suficiente para contar como deslize
-            if (Math.abs(diffX) > 30 || Math.abs(diffY) > 30) {
-                if (Math.abs(diffX) > Math.abs(diffY)) {
-                    // Movimento Horizontal
-                    EnviarMovimento(diffX > 0 ? 1 : -1, 0);
-                } else {
-                    // Movimento Vertical
-                    EnviarMovimento(0, diffY > 0 ? 1 : -1);
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                if (e.changedTouches[i].identifier === touchId) {
+                    touchId = null; // Libera para o próximo toque
                 }
             }
         }, { passive: true });
