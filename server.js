@@ -22,7 +22,7 @@ const wss = new WebSocket.Server({ server });
 let gameState = {
     players: {},
     pot: 0.00,
-    mapSize: 3000 // 🆕 Mapa agora é um quadrado gigante de 3000x3000px
+    mapSize: 3000
 };
 
 const CORES = ['#FF3366', '#33FF66', '#3366FF', '#FFFF33', '#FF33FF', '#00FFFF', '#FF9900'];
@@ -34,7 +34,6 @@ function gerarId() {
 wss.on('connection', (ws) => {
     const playerId = gerarId();
 
-    // Nasce em qualquer ponto aleatório dentro do mapa gigante de 3000x3000px
     gameState.players[playerId] = {
         id: playerId,
         x: Math.floor(Math.random() * (gameState.mapSize - 400)) + 200,
@@ -59,13 +58,10 @@ wss.on('connection', (ws) => {
         try {
             const data = JSON.parse(msg);
             if (data.type === 'move' && gameState.players[playerId]?.alive) {
-                // Impede que o jogador mude para a direção exatamente oposta instantaneamente (mecanica original paper.io)
-                if ((data.dx !== 0 && gameState.players[playerId].dx === -data.dx * 6) ||
-                    (data.dy !== 0 && gameState.players[playerId].dy === -data.dy * 6)) {
-                    return; 
-                }
-                gameState.players[playerId].dx = data.dx * 6;
-                gameState.players[playerId].dy = data.dy * 6;
+                // 🚀 Aplica velocidade multiplicando diretamente o vetor livre enviado pelo toque do celular
+                const velocidadeBase = 6;
+                gameState.players[playerId].dx = data.dx * velocidadeBase;
+                gameState.players[playerId].dy = data.dy * velocidadeBase;
             }
         } catch (e) {
             console.error(e);
@@ -83,14 +79,12 @@ setInterval(() => {
 
         if (player.dx !== 0 || player.dy !== 0) {
             player.trail.push({ x: player.x, y: player.y });
-            // Trilha maior para o mapa gigante
             if (player.trail.length > 250) player.trail.shift();
         }
 
         player.x += player.dx;
         player.y += player.dy;
 
-        // Limita a movimentação dentro das barreiras do mapa gigante de 3000px
         if (player.x < 20) player.x = 20;
         if (player.x > gameState.mapSize - 20) player.x = gameState.mapSize - 20;
         if (player.y < 20) player.y = 20;
@@ -108,5 +102,5 @@ setInterval(() => {
 }, 45);
 
 server.listen(PORT, () => {
-    console.log(`🚀 Mundo infinito iniciado na porta ${PORT}`);
+    console.log(`🚀 Motor 360° livre iniciado na porta ${PORT}`);
 });
