@@ -46,8 +46,15 @@
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         
-        // Conecta ao servidor WebSocket local
-        const ws = new WebSocket('ws://localhost:8080');
+        // Detecta automaticamente se o site está rodando local ou no Render
+        const local = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+        // Se for local usa ws://localhost:8080, se for no Render altera a URL atual de https para wss
+        const wsUrl = local 
+            ? 'ws://localhost:8080' 
+            : window.location.href.replace('http', 'ws');
+        
+        const ws = new WebSocket(wsUrl);
         
         let meuId = null;
         let dadosDoJogo = { players: {}, pot: 0 };
