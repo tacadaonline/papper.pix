@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Paper.io Otimizado</title>
+    <title>Paper.io - Território & Explosões</title>
     <style>
         body {
             margin: 0;
@@ -61,15 +61,29 @@
         redimensionarCanvas();
 
         const local = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        const wsUrl = local 
-            ? 'ws://localhost:8080' 
-            : window.location.origin.replace(/^http/, 'ws');
-        
+        const wsUrl = local ? 'ws://localhost:8080' : window.location.origin.replace(/^http/, 'ws');
         const ws = new WebSocket(wsUrl);
         
         let meuId = null;
         let servidoresDados = { players: {}, pot: 0, mapSize: 3000 };
         let renderDados = { players: {} };
+        let particulas = []; // 🆕 Sistema de efeitos especiais
+
+        // 🆕 Função para gerar explosão de partículas
+        function criarExplosao(x, y, cor) {
+            for (let i = 0; i < 35; i++) {
+                particulas.push({
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 8,
+                    vy: (Math.random() - 0.5) * 8,
+                    raio: Math.random() * 4 + 2,
+                    cor: cor,
+                    alfa: 1,
+                    vida: Math.random() * 0.03 + 0.015
+                });
+            }
+        }
 
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
@@ -79,30 +93,48 @@
                 document.getElementById('saldo').innerText = `R$ ${data.balance.toFixed(2)}`;
             }
             if (data.type === 'update') {
+                // Checa se alguém morreu para ativar o efeito especial antes de atualizar os dados
+                Object.keys(servidoresDados.players).forEach(id => {
+                    if (servidoresDados.players[id].alive && !data.gameState.players[id]?.alive) {
+                        const defunto = servidoresDados.players[id];
+                        criarExplosao(defunto.x, defunto.y, defunto.color);
+                    }
+                });
                 servidoresDados = data.gameState;
                 document.getElementById('pote').innerText = `R$ ${servidoresDados.pot.toFixed(2)}`;
+            }
+            if (data.type === 'gameOver' && data.id === meuId) {
+                alert("💥 Você foi eliminado!");
+                location.reload();
             }
         };
 
         function gameLoop() {
-            // Suaviza a transição das posições enviadas pelo servidor
             Object.keys(servidoresDados.players).forEach(id => {
                 const sPlayer = servidoresDados.players[id];
                 if (!renderDados.players[id]) {
                     renderDados.players[id] = { ...sPlayer };
                 } else {
                     const rPlayer = renderDados.players[id];
-                    // Fator de interpolação equilibrado (0.15) remove engasgos de rede
-                    rPlayer.x += (sPlayer.x - rPlayer.x) * 0.15;
-                    rPlayer.y += (sPlayer.y - rPlayer.y) * 0.15;
+                    rPlayer.x += (sPlayer.x - rPlayer.x) * 0.18;
+                    rPlayer.y += (sPlayer.y - rPlayer.y) * 0.18;
                     rPlayer.color = sPlayer.color;
                     rPlayer.trail = sPlayer.trail;
+                    rPlayer.territory = sPlayer.territory; // 🆕 Atualiza território
                     rPlayer.alive = sPlayer.alive;
                 }
             });
 
             Object.keys(renderDados.players).forEach(id => {
                 if (!servidoresDados.players[id]) delete renderDados.players[id];
+            });
+
+            // 🆕 Atualiza Partículas dos efeitos especiais
+            particulas.forEach((p, index) => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.alfa -= p.vida;
+                if (p.alfa <= 0) particulas.splice(index, 1);
             });
 
             desenharJogo();
@@ -126,30 +158,38 @@
 
             const MAP_SIZE = servidoresDados.mapSize || 3000;
 
-            // Fundo
+            // Desenha o Fundo
             ctx.fillStyle = '#14141c';
             ctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
-
-            // Grade sutil
-            ctx.strokeStyle = "rgba(255, 255, 255, 0.015)";
-            ctx.lineWidth = 1;
-            for (let x = 0; x <= MAP_SIZE; x += 60) {
-                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, MAP_SIZE); ctx.stroke();
-            }
-            for (let y = 0; y <= MAP_SIZE; y += 60) {
-                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(MAP_SIZE, y); ctx.stroke();
-            }
 
             // Borda do Mapa
             ctx.strokeStyle = '#ff3344';
             ctx.lineWidth = 6;
             ctx.strokeRect(0, 0, MAP_SIZE, MAP_SIZE);
 
-            // Renderiza Jogadores e Bots
+            // 🆕 1. Desenha os Territórios Conquistados (Abaixo dos jogadores)
+            Object.values(renderDados.players).forEach(player => {
+                if (!player.alive || !player.territory || player.territory.length < 3) return;
+                
+                ctx.beginPath();
+                ctx.fillStyle = player.color + "33"; // 20% de opacidade para a base preenchida
+                ctx.strokeStyle = player.color + "77";
+                ctx.lineWidth = 4;
+                
+                player.territory.forEach((ponto, index) => {
+                    if (index === 0) ctx.moveTo(ponto.x, ponto.y);
+                    else ctx.lineTo(ponto.x, ponto.y);
+                });
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+            });
+
+            // 2. Desenha os Jogadores e as Trilhas Ativas
             Object.values(renderDados.players).forEach(player => {
                 if (!player.alive) return;
 
-                // Desenha rastro
+                // Desenha rastro ativo
                 if (player.trail && player.trail.length > 1) {
                     ctx.beginPath();
                     ctx.strokeStyle = player.color;
@@ -163,11 +203,10 @@
                     ctx.stroke();
                 }
 
-                // Desenha quadrado do jogador ou bot
+                // Desenha quadrado físico
                 ctx.fillStyle = player.color;
                 ctx.fillRect(player.x - 14, player.y - 14, 28, 28);
 
-                // Destaque do jogador atual
                 if (player.id === meuId) {
                     ctx.strokeStyle = '#ffffff';
                     ctx.lineWidth = 3;
@@ -175,10 +214,21 @@
                 }
             });
 
+            // 🆕 3. Renderiza as Partículas de Explosão na Tela
+            particulas.forEach(p => {
+                ctx.save();
+                ctx.globalAlpha = p.alfa;
+                ctx.fillStyle = p.cor;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.raio, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            });
+
             ctx.restore();
         }
 
-        // INPUTS DO PC
+        // CONTROLES DE MOVIMENTO
         window.addEventListener('keydown', (e) => {
             let dx = 0, dy = 0;
             if (e.key === 'ArrowUp' || e.key === 'w')    { dx = 0;  dy = -1; }
@@ -188,7 +238,6 @@
             if (dx !== 0 || dy !== 0) EnviarMovimento(dx, dy);
         });
 
-        // INPUTS DO CELULAR
         let tStartX = 0, tStartY = 0;
         window.addEventListener('touchstart', (e) => {
             tStartX = e.touches[0].clientX;
