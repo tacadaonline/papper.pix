@@ -5,19 +5,29 @@ const path = require('path');
 
 const PORT = process.env.PORT || 8080;
 
+// 🚀 Servidor HTTP que entrega o arquivo index.html automaticamente
 const server = http.createServer((req, res) => {
     fs.readFile(path.join(__dirname, 'index.html'), (err, content) => {
-        if (err) { res.writeHead(500); res.end('Erro'); } 
-        else { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(content); }
+        if (err) { 
+            res.writeHead(500); 
+            res.end('Erro ao carregar index.html'); 
+        } else { 
+            res.writeHead(200, { 'Content-Type': 'text/html' }); 
+            res.end(content); 
+        }
     });
 });
 
 const wss = new WebSocket.Server({ server });
 
+// Definição da malha do Grid profissional (Paper.io original)
 let gameState = {
     players: {},
     pot: 0.00,
-    mapSize: 3000
+    grid: {}, // Armazena a matriz ocupada: {"linha,coluna": {tipo: "base/rastro", dono: "id", cor: "hex"}}
+    mapRows: 75, // 75 blocos de altura
+    mapCols: 75, // 75 blocos de largura
+    blockSize: 40
 };
 
 const CORES = ['#FF3366', '#33FF66', '#3366FF', '#FFFF33', '#FF33FF', '#00FFFF', '#FF9900'];
@@ -26,155 +36,161 @@ function gerarId() {
     return '_' + Math.random().toString(36).substr(2, 9);
 }
 
-function criarTerritorioInicial(cx, cy) {
-    const r = 80; // Aumentado ligeiramente o tamanho da base inicial para melhor visualização
-    return [
-        { x: cx - r, y: cy - r },
-        { x: cx + r, y: cy - r },
-        { x: cx + r, y: cy + r },
-        { x: cx - r, y: cy + r }
-    ];
-}
-
-function estaDentroDoPoligono(ponto, poligono) {
-    let x = ponto.x, y = ponto.y;
-    let dentro = false;
-    for (let i = 0, j = poligono.length - 1; i < poligono.length; j = i++) {
-        let xi = poligono[i].x, yi = poligono[i].y;
-        let xj = poligono[j].x, yj = poligono[j].y;
-        let intersecta = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
-        if (intersecta) dentro = !dentro;
+// Gera uma base quadrada inicial de 4x4 blocos perfeitos para o jogador
+function conquistarAreaInicial(startRow, startCol, playerId, cor) {
+    for (let r = startRow; r < startRow + 4; r++) {
+        for (let c = startCol; c < startCol + 4; c++) {
+            gameState.grid[`${r},${c}`] = { tipo: 'base', dono: playerId, cor: cor };
+        }
     }
-    return dentro;
 }
 
-function criarBotPertoDe(centerX, centerY, idNome) {
-    const offsetX = (Math.random() - 0.5) * 800;
-    const offsetY = (Math.random() - 0.5) * 800;
-    const bx = Math.max(200, Math.min(2800, centerX + offsetX));
-    const by = Math.max(200, Math.min(2800, centerY + offsetY));
+// Algoritmo de Limpeza: Apaga bases e rastros de quem foi eliminado
+function removerDadosDoJogador(playerId) {
+    Object.keys(gameState.grid).forEach(chave => {
+        if (gameState.grid[chave].dono === playerId) {
+            delete gameState.grid[chave];
+        }
+    });
+}
+
+// Converte rastro ativo em base conquistada ao fechar o circuito
+function solidificarRastro(playerId) {
+    Object.keys(gameState.grid).forEach(chave => {
+        const bloco = gameState.grid[chave];
+        if (bloco.dono === playerId && bloco.tipo === 'rastro') {
+            bloco.tipo = 'base';
+        }
+    });
+}
+
+// Cria Bots automatizados no mapa
+function criarBot(idNome) {
+    const r = Math.floor(Math.random() * (gameState.mapRows - 10)) + 3;
+    const c = Math.floor(Math.random() * (gameState.mapCols - 10)) + 3;
+    const cor = CORES[Math.floor(Math.random() * CORES.length)];
 
     gameState.players[idNome] = {
         id: idNome,
-        x: bx,
-        y: by,
-        dx: 12,
-        dy: 0,
-        color: CORES[Math.floor(Math.random() * CORES.length)],
-        trail: [],
-        territory: criarTerritorioInicial(bx, by),
+        row: r, col: c,
+        dRow: 1, dCol: 0, // Começa andando automático
+        color: cor,
         alive: true,
-        isBot: true,
-        balance: 0
+        isBot: true
     };
+    conquistarAreaInicial(r, c, idNome, cor);
 }
 
+// Inicializa Bots padrão ao rodar o servidor
+criarBot('BOT_Mestre');
+criarBot('BOT_Alvo');
+
+// Evento de conexão do jogador real
 wss.on('connection', (ws) => {
     const playerId = gerarId();
-    const spawnX = Math.floor(Math.random() * 1000) + 1000;
-    const spawnY = Math.floor(Math.random() * 1000) + 1000;
+    const r = Math.floor(Math.random() * (gameState.mapRows - 15)) + 5;
+    const c = Math.floor(Math.random() * (gameState.mapCols - 15)) + 5;
+    const cor = '#00ffcc'; // Cor fixa neon pro jogador principal
 
     gameState.players[playerId] = {
         id: playerId,
-        x: spawnX,
-        y: spawnY,
-        dx: 0,
-        dy: 0,
-        color: '#00ffcc',
-        trail: [],
-        territory: criarTerritorioInicial(spawnX, spawnY),
+        row: r, col: c,
+        dRow: 0, dCol: 0, // Aguarda o primeiro comando do jogador
+        color: cor,
         alive: true,
         isBot: false,
         balance: 50.00
     };
 
     gameState.pot += 2.00;
-
-    // Spawna os bots perto
-    criarBotPertoDe(spawnX, spawnY, `BOT_1_${playerId}`);
-    criarBotPertoDe(spawnX, spawnY, `BOT_2_${playerId}`);
+    conquistarAreaInicial(r, c, playerId, cor);
 
     ws.send(JSON.stringify({ type: 'init', id: playerId, balance: gameState.players[playerId].balance }));
 
     ws.on('message', (msg) => {
         try {
             const data = JSON.parse(msg);
-            if (data.type === 'move' && gameState.players[playerId]?.alive) {
-                gameState.players[playerId].dx = data.dx * 13;
-                gameState.players[playerId].dy = data.dy * 13;
+            const p = gameState.players[playerId];
+            if (data.type === 'move' && p?.alive) {
+                // Impede virar diretamente para a direção exatamente oposta
+                if (data.dRow === -p.dRow && data.dRow !== 0) return;
+                if (data.dCol === -p.dCol && data.dCol !== 0) return;
+                
+                p.dRow = data.dRow;
+                p.dCol = data.dCol;
             }
         } catch (e) { console.error(e); }
     });
 
     ws.on('close', () => { 
+        removerDadosDoJogador(playerId);
         delete gameState.players[playerId];
-        delete gameState.players[`BOT_1_${playerId}`];
-        delete gameState.players[`BOT_2_${playerId}`];
     });
 });
 
+// MOTOR DO JOGO: Processa física, conquistas e colisões em Grid (A cada 130ms)
 setInterval(() => {
     Object.values(gameState.players).forEach(player => {
         if (!player.alive) return;
 
-        if (player.isBot && Math.random() < 0.07) {
-            const angulo = Math.random() * Math.PI * 2;
-            player.dx = Math.cos(angulo) * 11;
-            player.dy = Math.sin(angulo) * 11;
+        // Lógica simples de IA do Bot: muda de direção aleatoriamente
+        if (player.isBot && Math.random() < 0.12) {
+            const opcoes = [{r:1,c:0}, {r:-1,c:0}, {r:0,c:1}, {r:0,c:-1}];
+            const escolha = opcoes[Math.floor(Math.random() * opcoes.length)];
+            if (!(escolha.r === -player.dRow && escolha.r !== 0) && !(escolha.c === -player.dCol && escolha.c !== 0)) {
+                player.dRow = escolha.r; player.dCol = escolha.c;
+            }
         }
 
-        const emSuaBase = estaDentroDoPoligono({ x: player.x, y: player.y }, player.territory);
+        // Se o boneco estiver parado (início do jogo), pula o processamento
+        if (player.dRow === 0 && player.dCol === 0) return;
 
-        if (!emSuaBase) {
-            player.trail.push({ x: player.x, y: player.y });
-            if (player.trail.length > 300) player.trail.shift();
-        } else if (emSuaBase && player.trail.length > 0) {
-            // Unifica o território ao voltar para a base
-            player.territory = player.territory.concat(player.trail);
-            player.trail = [];
-        }
+        // Avança um bloco na malha do grid
+        player.row += player.dRow;
+        player.col += player.dCol;
 
-        player.x += player.dx;
-        player.y += player.dy;
+        // Barreiras limitadoras externas do mapa
+        if (player.row < 0) { player.row = 0; if(player.isBot) player.dRow *= -1; }
+        if (player.row >= gameState.mapRows) { player.row = gameState.mapRows - 1; if(player.isBot) player.dRow *= -1; }
+        if (player.col < 0) { player.col = 0; if(player.isBot) player.dCol *= -1; }
+        if (player.col >= gameState.mapCols) { player.col = gameState.mapCols - 1; if(player.isBot) player.dCol *= -1; }
 
-        if (player.x < 30) { player.x = 30; if(player.isBot) player.dx *= -1; }
-        if (player.x > gameState.mapSize - 30) { player.x = gameState.mapSize - 30; if(player.isBot) player.dx *= -1; }
-        if (player.y < 30) { player.y = 30; if(player.isBot) player.dy *= -1; }
-        if (player.y > gameState.mapSize - 30) { player.y = gameState.mapSize - 30; if(player.isBot) player.dy *= -1; }
-    });
+        const chavePosicao = `${player.row},${player.col}`;
+        const blocoAtual = gameState.grid[chavePosicao];
 
-    // ⚔️ NOVO SISTEMA DE COLISÕES REFINADO (SEM AUTODESTRUIÇÃO IMEDIATA)
-    Object.values(gameState.players).forEach(p1 => {
-        if (!p1.alive) return;
-
-        Object.values(gameState.players).forEach(p2 => {
-            if (!p2.alive || p2.trail.length < 2) return;
-
-            // Percorre a trilha de p2 ponto por ponto
-            for (let i = 0; i < p2.trail.length; i++) {
-                // 🔐 TRAVA DE SEGURANÇA: Se p1 estiver batendo na sua própria trilha (p1 === p2),
-                // ignora os últimos 5 pontos criados para não morrer ao sair da base.
-                if (p1.id === p2.id && i >= p2.trail.length - 5) {
-                    continue; 
-                }
-
-                const pontoTrilha = p2.trail[i];
-                const distancia = Math.hypot(p1.x - pontoTrilha.x, p1.y - pontoTrilha.y);
-
-                if (distancia < 20) {
-                    p2.alive = false; // Quem teve a trilha cortada morre!
-                    gameState.pot += 5.00;
-                    break; 
+        // LÓGICA DE CAPTURA E COLISÃO EM CÉLULAS
+        if (!blocoAtual || blocoAtual.dono !== player.id) {
+            // Se pisar no rastro ativo de outro jogador -> ELIMINAÇÃO!
+            if (blocoAtual && blocoAtual.tipo === 'rastro') {
+                const oponenteId = blocoAtual.dono;
+                if (gameState.players[oponenteId]) {
+                    gameState.players[oponenteId].alive = false;
+                    removerDadosDoJogador(oponenteId);
+                    gameState.pot += 5.00; // Incrementa bônus ao pote pelo abate
                 }
             }
-        });
+            
+            // Cria a marcação de rastro por onde o jogador passa
+            gameState.grid[chavePosicao] = { tipo: 'rastro', dono: player.id, cor: player.color };
+        } else if (blocoAtual && blocoAtual.dono === player.id) {
+            // Se colidir com o seu próprio rastro ativo -> Auto-morte
+            if (blocoAtual.tipo === 'rastro') {
+                player.alive = false;
+                removerDadosDoJogador(player.id);
+            } 
+            // Se retornar em segurança para um bloco da sua base -> Solidifica e anexa o território
+            else if (blocoAtual.tipo === 'base') {
+                solidificarRastro(player.id);
+            }
+        }
     });
 
+    // Envia a matriz de dados em tempo real para os clientes conectados
     wss.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
             client.send(JSON.stringify({ type: 'update', gameState: gameState }));
             
-            // Avisa especificamente o jogador que faleceu
+            // Dispara o alerta de fim de jogo especificamente para quem morreu
             Object.values(gameState.players).forEach(p => {
                 if (!p.alive && p.id === client.id) {
                     client.send(JSON.stringify({ type: 'gameOver', id: p.id }));
@@ -182,6 +198,8 @@ setInterval(() => {
             });
         }
     });
-}, 100);
+}, 130);
 
-server.listen(PORT, () => { console.log(`🚀 Motor com física ajustada ativo na porta ${PORT}`); });
+server.listen(PORT, () => { 
+    console.log(`🚀 Motor Profissional em Grid ativo e rodando na porta ${PORT}`); 
+});
