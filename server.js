@@ -88,6 +88,8 @@ criarBot('BOT_Alvo');
 // Evento de conexão do jogador real
 wss.on('connection', (ws) => {
     const playerId = gerarId();
+    ws.id = playerId; // 🆕 Vincula o ID diretamente ao socket do cliente para identificação
+
     const r = Math.floor(Math.random() * (gameState.mapRows - 15)) + 5;
     const c = Math.floor(Math.random() * (gameState.mapCols - 15)) + 5;
     const cor = '#00ffcc'; // Cor fixa neon pro jogador principal
@@ -171,7 +173,7 @@ setInterval(() => {
             }
             
             // Cria a marcação de rastro por onde o jogador passa
-            gameState.grid[chavePosicao] = { tipo: 'rastro', dono: player.id, cor: player.color };
+            gameState.grid[chavePosicao] = { tipo: 'rastro', dono: player.id, warmUp: true, cor: player.color };
         } else if (blocoAtual && blocoAtual.dono === player.id) {
             // Se colidir com o seu próprio rastro ativo -> Auto-morte
             if (blocoAtual.tipo === 'rastro') {
