@@ -26,9 +26,8 @@ function gerarId() {
     return '_' + Math.random().toString(36).substr(2, 9);
 }
 
-// 🆕 Auxiliar para criar um quadrado de território inicial estruturado
 function criarTerritorioInicial(cx, cy) {
-    const r = 60; // tamanho do raio da base
+    const r = 80; // Aumentado ligeiramente o tamanho da base inicial para melhor visualização
     return [
         { x: cx - r, y: cy - r },
         { x: cx + r, y: cy - r },
@@ -37,7 +36,6 @@ function criarTerritorioInicial(cx, cy) {
     ];
 }
 
-// 🆕 Função matemática para checar se um ponto está dentro do polígono de território
 function estaDentroDoPoligono(ponto, poligono) {
     let x = ponto.x, y = ponto.y;
     let dentro = false;
@@ -51,10 +49,10 @@ function estaDentroDoPoligono(ponto, poligono) {
 }
 
 function criarBotPertoDe(centerX, centerY, idNome) {
-    const offsetX = (Math.random() - 0.5) * 600;
-    const offsetY = (Math.random() - 0.5) * 600;
-    const bx = Math.max(150, Math.min(2850, centerX + offsetX));
-    const by = Math.max(150, Math.min(2850, centerY + offsetY));
+    const offsetX = (Math.random() - 0.5) * 800;
+    const offsetY = (Math.random() - 0.5) * 800;
+    const bx = Math.max(200, Math.min(2800, centerX + offsetX));
+    const by = Math.max(200, Math.min(2800, centerY + offsetY));
 
     gameState.players[idNome] = {
         id: idNome,
@@ -92,6 +90,7 @@ wss.on('connection', (ws) => {
 
     gameState.pot += 2.00;
 
+    // Spawna os bots perto
     criarBotPertoDe(spawnX, spawnY, `BOT_1_${playerId}`);
     criarBotPertoDe(spawnX, spawnY, `BOT_2_${playerId}`);
 
@@ -127,50 +126,55 @@ setInterval(() => {
         const emSuaBase = estaDentroDoPoligono({ x: player.x, y: player.y }, player.territory);
 
         if (!emSuaBase) {
-            // Guarda o rastro fora da base
             player.trail.push({ x: player.x, y: player.y });
             if (player.trail.length > 300) player.trail.shift();
         } else if (emSuaBase && player.trail.length > 0) {
-            // 🆕 CAPTURA DE TERRITÓRIO: Retornou à base, anexa a trilha ao polígono existente
+            // Unifica o território ao voltar para a base
             player.territory = player.territory.concat(player.trail);
-            player.trail = []; // limpa a trilha usada
+            player.trail = [];
         }
 
         player.x += player.dx;
         player.y += player.dy;
 
-        // Limites físicos do mapa
         if (player.x < 30) { player.x = 30; if(player.isBot) player.dx *= -1; }
         if (player.x > gameState.mapSize - 30) { player.x = gameState.mapSize - 30; if(player.isBot) player.dx *= -1; }
         if (player.y < 30) { player.y = 30; if(player.isBot) player.dy *= -1; }
         if (player.y > gameState.mapSize - 30) { player.y = gameState.mapSize - 30; if(player.isBot) player.dy *= -1; }
     });
 
-    // 🆕 SISTEMA DE COLISÕES (FÍSICA DE ELIMINAÇÃO)
+    // ⚔️ NOVO SISTEMA DE COLISÕES REFINADO (SEM AUTODESTRUIÇÃO IMEDIATA)
     Object.values(gameState.players).forEach(p1 => {
         if (!p1.alive) return;
 
         Object.values(gameState.players).forEach(p2 => {
             if (!p2.alive || p2.trail.length < 2) return;
 
-            // Testa se a cabeça de p1 bateu em algum ponto da trilha ativa de p2
-            p2.trail.forEach(pontoTrilha => {
-                const distancia = Math.hypot(p1.x - pontoTrilha.x, p1.y - pontoTrilha.y);
-                if (distancia < 18) {
-                    // Colisão detectada! Quem teve a trilha cortada (p2) morre
-                    p2.alive = false;
-                    gameState.pot += 5.00; // bônus adicionado ao pote por abate
+            // Percorre a trilha de p2 ponto por ponto
+            for (let i = 0; i < p2.trail.length; i++) {
+                // 🔐 TRAVA DE SEGURANÇA: Se p1 estiver batendo na sua própria trilha (p1 === p2),
+                // ignora os últimos 5 pontos criados para não morrer ao sair da base.
+                if (p1.id === p2.id && i >= p2.trail.length - 5) {
+                    continue; 
                 }
-            });
+
+                const pontoTrilha = p2.trail[i];
+                const distancia = Math.hypot(p1.x - pontoTrilha.x, p1.y - pontoTrilha.y);
+
+                if (distancia < 20) {
+                    p2.alive = false; // Quem teve a trilha cortada morre!
+                    gameState.pot += 5.00;
+                    break; 
+                }
+            }
         });
     });
 
-    // Envia dados para conexões ativas e avisa quem perdeu
     wss.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
             client.send(JSON.stringify({ type: 'update', gameState: gameState }));
             
-            // Verifica se o jogador associado a este cliente morreu nesta rodada
+            // Avisa especificamente o jogador que faleceu
             Object.values(gameState.players).forEach(p => {
                 if (!p.alive && p.id === client.id) {
                     client.send(JSON.stringify({ type: 'gameOver', id: p.id }));
@@ -180,4 +184,4 @@ setInterval(() => {
     });
 }, 100);
 
-server.listen(PORT, () => { console.log(`🚀 Motor com colisão e expansão de território ativo na porta ${PORT}`); });
+server.listen(PORT, () => { console.log(`🚀 Motor com física ajustada ativo na porta ${PORT}`); });
