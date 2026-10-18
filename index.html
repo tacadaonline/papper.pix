@@ -4,13 +4,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Paper.io - Território & Explosões</title>
+    <title>Paper.io Professional Grid Edition</title>
     <style>
         body {
             margin: 0;
-            background-color: #0c0c0e;
+            background-color: #08080a;
             color: #fff;
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            font-family: 'Segoe UI', system-ui, sans-serif;
             overflow: hidden;
             touch-action: none;
         }
@@ -20,15 +20,15 @@
             left: 50%;
             transform: translateX(-50%);
             display: flex;
-            gap: 20px;
+            gap: 25px;
             font-size: 14px;
-            background: rgba(12, 12, 14, 0.9);
-            padding: 10px 20px;
+            background: rgba(12, 12, 14, 0.95);
+            padding: 12px 25px;
             border-radius: 50px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            border: 1px solid rgba(255, 255, 255, 0.1);
             z-index: 10;
-            backdrop-filter: blur(5px);
+            backdrop-filter: blur(8px);
         }
         canvas {
             display: block;
@@ -65,22 +65,19 @@
         const ws = new WebSocket(wsUrl);
         
         let meuId = null;
-        let servidoresDados = { players: {}, pot: 0, mapSize: 3000 };
+        let servidoresDados = { players: {}, pot: 0, grid: {}, mapRows: 75, mapCols: 75, blockSize: 40 };
         let renderDados = { players: {} };
-        let particulas = []; // 🆕 Sistema de efeitos especiais
+        let particulas = [];
 
-        // 🆕 Função para gerar explosão de partículas
         function criarExplosao(x, y, cor) {
-            for (let i = 0; i < 35; i++) {
+            for (let i = 0; i < 30; i++) {
                 particulas.push({
-                    x: x,
-                    y: y,
-                    vx: (Math.random() - 0.5) * 8,
-                    vy: (Math.random() - 0.5) * 8,
-                    raio: Math.random() * 4 + 2,
-                    cor: cor,
-                    alfa: 1,
-                    vida: Math.random() * 0.03 + 0.015
+                    x: x, y: y,
+                    vx: (Math.random() - 0.5) * 6,
+                    vy: (Math.random() - 0.5) * 6,
+                    raio: Math.random() * 3 + 2,
+                    cor: cor, alfa: 1,
+                    vida: Math.random() * 0.04 + 0.02
                 });
             }
         }
@@ -93,34 +90,37 @@
                 document.getElementById('saldo').innerText = `R$ ${data.balance.toFixed(2)}`;
             }
             if (data.type === 'update') {
-                // Checa se alguém morreu para ativar o efeito especial antes de atualizar os dados
                 Object.keys(servidoresDados.players).forEach(id => {
                     if (servidoresDados.players[id].alive && !data.gameState.players[id]?.alive) {
-                        const defunto = servidoresDados.players[id];
-                        criarExplosao(defunto.x, defunto.y, defunto.color);
+                        const p = servidoresDados.players[id];
+                        criarExplosao(p.col * 40 + 20, p.row * 40 + 20, p.color);
                     }
                 });
                 servidoresDados = data.gameState;
                 document.getElementById('pote').innerText = `R$ ${servidoresDados.pot.toFixed(2)}`;
             }
             if (data.type === 'gameOver' && data.id === meuId) {
-                alert("💥 Você foi eliminado!");
+                alert("💥 Fim de Jogo! Seu rastro foi cortado.");
                 location.reload();
             }
         };
 
         function gameLoop() {
+            const size = servidoresDados.blockSize || 40;
+            
             Object.keys(servidoresDados.players).forEach(id => {
                 const sPlayer = servidoresDados.players[id];
+                const alvoX = sPlayer.col * size + size / 2;
+                const alvoY = sPlayer.row * size + size / 2;
+
                 if (!renderDados.players[id]) {
-                    renderDados.players[id] = { ...sPlayer };
+                    renderDados.players[id] = { x: alvoX, y: alvoY, ...sPlayer };
                 } else {
                     const rPlayer = renderDados.players[id];
-                    rPlayer.x += (sPlayer.x - rPlayer.x) * 0.18;
-                    rPlayer.y += (sPlayer.y - rPlayer.y) * 0.18;
+                    // Interpolação super responsiva para o grid
+                    rPlayer.x += (alvoX - rPlayer.x) * 0.35;
+                    rPlayer.y += (alvoY - rPlayer.y) * 0.35;
                     rPlayer.color = sPlayer.color;
-                    rPlayer.trail = sPlayer.trail;
-                    rPlayer.territory = sPlayer.territory; // 🆕 Atualiza território
                     rPlayer.alive = sPlayer.alive;
                 }
             });
@@ -129,12 +129,9 @@
                 if (!servidoresDados.players[id]) delete renderDados.players[id];
             });
 
-            // 🆕 Atualiza Partículas dos efeitos especiais
-            particulas.forEach((p, index) => {
-                p.x += p.vx;
-                p.y += p.vy;
-                p.alfa -= p.vida;
-                if (p.alfa <= 0) particulas.splice(index, 1);
+            particulas.forEach((p, i) => {
+                p.x += p.vx; p.y += p.vy; p.alfa -= p.vida;
+                if (p.alfa <= 0) particulas.splice(i, 1);
             });
 
             desenharJogo();
@@ -144,9 +141,11 @@
         function desenharJogo() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+            const size = servidoresDados.blockSize || 40;
             const meuJogador = renderDados.players[meuId];
-            let camX = servidoresDados.mapSize / 2 - canvas.width / 2;
-            let camY = servidoresDados.mapSize / 2 - canvas.height / 2;
+            
+            let camX = (servidoresDados.mapCols * size) / 2 - canvas.width / 2;
+            let camY = (servidoresDados.mapRows * size) / 2 - canvas.height / 2;
 
             if (meuJogador) {
                 camX = meuJogador.x - canvas.width / 2;
@@ -156,88 +155,80 @@
             ctx.save();
             ctx.translate(-camX, -camY);
 
-            const MAP_SIZE = servidoresDados.mapSize || 3000;
+            // 1. Desenha o fundo do mapa
+            const totalWidth = servidoresDados.mapCols * size;
+            const totalHeight = servidoresDados.mapRows * size;
+            ctx.fillStyle = '#111116';
+            ctx.fillRect(0, 0, totalWidth, totalHeight);
 
-            // Desenha o Fundo
-            ctx.fillStyle = '#14141c';
-            ctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
+            // 2. Desenha a grade sutil de blocos
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.015)";
+            ctx.lineWidth = 1;
+            for (let x = 0; x <= totalWidth; x += size) {
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, totalHeight); ctx.stroke();
+            }
+            for (let y = 0; y <= totalHeight; y += size) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(totalWidth, y); ctx.stroke();
+            }
 
-            // Borda do Mapa
+            // 3. Desenha os territórios conquistados e os rastros ativos vindos da matriz do servidor
+            if (servidoresDados.grid) {
+                Object.keys(servidoresDados.grid).forEach(chave => {
+                    const [r, c] = chave.split(',').map(Number);
+                    const bloco = servidoresDados.grid[chave];
+                    
+                    if (bloco.tipo === 'base') {
+                        ctx.fillStyle = bloco.cor + "3A"; // Base preenchida transparente
+                        ctx.fillRect(c * size, r * size, size, size);
+                    } else if (bloco.tipo === 'rastro') {
+                        ctx.fillStyle = bloco.cor + "AA"; // Rastro mais sólido e forte
+                        ctx.fillRect(c * size + 4, r * size + 4, size - 8, size - 8);
+                    }
+                });
+            }
+
+            // Borda limitadora do mapa
             ctx.strokeStyle = '#ff3344';
             ctx.lineWidth = 6;
-            ctx.strokeRect(0, 0, MAP_SIZE, MAP_SIZE);
+            ctx.strokeRect(0, 0, totalWidth, totalHeight);
 
-            // 🆕 1. Desenha os Territórios Conquistados (Abaixo dos jogadores)
-            Object.values(renderDados.players).forEach(player => {
-                if (!player.alive || !player.territory || player.territory.length < 3) return;
-                
-                ctx.beginPath();
-                ctx.fillStyle = player.color + "33"; // 20% de opacidade para a base preenchida
-                ctx.strokeStyle = player.color + "77";
-                ctx.lineWidth = 4;
-                
-                player.territory.forEach((ponto, index) => {
-                    if (index === 0) ctx.moveTo(ponto.x, ponto.y);
-                    else ctx.lineTo(ponto.x, ponto.y);
-                });
-                ctx.closePath();
-                ctx.fill();
-                ctx.stroke();
-            });
-
-            // 2. Desenha os Jogadores e as Trilhas Ativas
+            // 4. Desenha as cabeças dos Jogadores e Bots
             Object.values(renderDados.players).forEach(player => {
                 if (!player.alive) return;
 
-                // Desenha rastro ativo
-                if (player.trail && player.trail.length > 1) {
-                    ctx.beginPath();
-                    ctx.strokeStyle = player.color;
-                    ctx.lineWidth = 12;
-                    ctx.lineCap = "round";
-                    ctx.lineJoin = "round";
-                    player.trail.forEach((ponto, index) => {
-                        if (index === 0) ctx.moveTo(ponto.x, ponto.y);
-                        else ctx.lineTo(ponto.x, ponto.y);
-                    });
-                    ctx.stroke();
-                }
-
-                // Desenha quadrado físico
                 ctx.fillStyle = player.color;
-                ctx.fillRect(player.x - 14, player.y - 14, 28, 28);
+                ctx.fillRect(player.x - 16, player.y - 16, 32, 32);
 
                 if (player.id === meuId) {
                     ctx.strokeStyle = '#ffffff';
                     ctx.lineWidth = 3;
-                    ctx.strokeRect(player.x - 17, player.y - 17, 34, 34);
+                    ctx.strokeRect(player.x - 19, player.y - 19, 38, 38);
                 }
             });
 
-            // 🆕 3. Renderiza as Partículas de Explosão na Tela
+            // 5. Partículas de morte
             particulas.forEach(p => {
                 ctx.save();
                 ctx.globalAlpha = p.alfa;
                 ctx.fillStyle = p.cor;
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, p.raio, 0, Math.PI * 2);
-                ctx.fill();
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.raio, 0, Math.PI * 2); ctx.fill();
                 ctx.restore();
             });
 
             ctx.restore();
         }
 
-        // CONTROLES DE MOVIMENTO
+        // CONTROLES EM EIXO RETO (PC)
         window.addEventListener('keydown', (e) => {
-            let dx = 0, dy = 0;
-            if (e.key === 'ArrowUp' || e.key === 'w')    { dx = 0;  dy = -1; }
-            if (e.key === 'ArrowDown' || e.key === 's')  { dx = 0;  dy = 1;  }
-            if (e.key === 'ArrowLeft' || e.key === 'a')  { dx = -1; dy = 0;  }
-            if (e.key === 'ArrowRight' || e.key === 'd') { dx = 1;  dy = 0;  }
-            if (dx !== 0 || dy !== 0) EnviarMovimento(dx, dy);
+            let dRow = 0, dCol = 0;
+            if (e.key === 'ArrowUp' || e.key === 'w')    { dRow = -1; dCol = 0;  }
+            if (e.key === 'ArrowDown' || e.key === 's')  { dRow = 1;  dCol = 0;  }
+            if (e.key === 'ArrowLeft' || e.key === 'a')  { dRow = 0;  dCol = -1; }
+            if (e.key === 'ArrowRight' || e.key === 'd') { dRow = 0;  dCol = 1;  }
+            if (dRow !== 0 || dCol !== 0) EnviarDirecao(dRow, dCol);
         });
 
+        // CONTROLES EM EIXO RETO (SWIPES CELULAR)
         let tStartX = 0, tStartY = 0;
         window.addEventListener('touchstart', (e) => {
             tStartX = e.touches[0].clientX;
@@ -245,19 +236,17 @@
         }, { passive: true });
 
         window.addEventListener('touchmove', (e) => {
+            if (!tStartX || !tStartY) return;
             const diffX = e.touches[0].clientX - tStartX;
             const diffY = e.touches[0].clientY - tStartY;
-            const dist = Math.hypot(diffX, diffY);
-            if (dist > 10) EnviarMovimento(diffX / dist, diffY / dist);
+
+            if (Math.abs(diffX) > 25 || Math.abs(diffY) > 25) {
+                if (Math.abs(diffX) > Math.abs(diffY)) {
+                    EnviarDirecao(0, diffX > 0 ? 1 : -1);
+                } else {
+                    EnviarDirecao(diffY > 0 ? 1 : -1, 0);
+                }
+                tStartX = 0; tStartY = 0; // Reseta o toque atual para registrar o próximo rumo
+            }
         }, { passive: true });
 
-        function EnviarMovimento(dx, dy) {
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'move', dx, dy }));
-            }
-        }
-
-        requestAnimationFrame(gameLoop);
-    </script>
-</body>
-</html>
