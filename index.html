@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Paper.io 360° com Bots</title>
+    <title>Paper.io Otimizado</title>
     <style>
         body {
             margin: 0;
@@ -22,13 +22,12 @@
             display: flex;
             gap: 20px;
             font-size: 14px;
-            background: rgba(12, 12, 14, 0.85);
+            background: rgba(12, 12, 14, 0.9);
             padding: 10px 20px;
             border-radius: 50px;
             box-shadow: 0 8px 32px rgba(0,0,0,0.5);
             border: 1px solid rgba(255, 255, 255, 0.08);
             z-index: 10;
-            white-space: nowrap;
             backdrop-filter: blur(5px);
         }
         canvas {
@@ -86,14 +85,16 @@
         };
 
         function gameLoop() {
+            // Suaviza a transição das posições enviadas pelo servidor
             Object.keys(servidoresDados.players).forEach(id => {
                 const sPlayer = servidoresDados.players[id];
                 if (!renderDados.players[id]) {
                     renderDados.players[id] = { ...sPlayer };
                 } else {
                     const rPlayer = renderDados.players[id];
-                    rPlayer.x += (sPlayer.x - rPlayer.x) * 0.3;
-                    rPlayer.y += (sPlayer.y - rPlayer.y) * 0.3;
+                    // Fator de interpolação equilibrado (0.15) remove engasgos de rede
+                    rPlayer.x += (sPlayer.x - rPlayer.x) * 0.15;
+                    rPlayer.y += (sPlayer.y - rPlayer.y) * 0.15;
                     rPlayer.color = sPlayer.color;
                     rPlayer.trail = sPlayer.trail;
                     rPlayer.alive = sPlayer.alive;
@@ -125,11 +126,12 @@
 
             const MAP_SIZE = servidoresDados.mapSize || 3000;
 
+            // Fundo
             ctx.fillStyle = '#14141c';
             ctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
 
-            // Linhas de grade estáveis
-            ctx.strokeStyle = "rgba(255, 255, 255, 0.02)";
+            // Grade sutil
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.015)";
             ctx.lineWidth = 1;
             for (let x = 0; x <= MAP_SIZE; x += 60) {
                 ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, MAP_SIZE); ctx.stroke();
@@ -138,14 +140,16 @@
                 ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(MAP_SIZE, y); ctx.stroke();
             }
 
+            // Borda do Mapa
             ctx.strokeStyle = '#ff3344';
-            ctx.lineWidth = 5;
+            ctx.lineWidth = 6;
             ctx.strokeRect(0, 0, MAP_SIZE, MAP_SIZE);
 
+            // Renderiza Jogadores e Bots
             Object.values(renderDados.players).forEach(player => {
                 if (!player.alive) return;
 
-                // Desenha o rastro/trilha
+                // Desenha rastro
                 if (player.trail && player.trail.length > 1) {
                     ctx.beginPath();
                     ctx.strokeStyle = player.color;
@@ -159,11 +163,11 @@
                     ctx.stroke();
                 }
 
-                // Desenha a cabeça do jogador (Compatível com celulares antigos)
+                // Desenha quadrado do jogador ou bot
                 ctx.fillStyle = player.color;
                 ctx.fillRect(player.x - 14, player.y - 14, 28, 28);
 
-                // Borda indicadora ao redor do SEU jogador
+                // Destaque do jogador atual
                 if (player.id === meuId) {
                     ctx.strokeStyle = '#ffffff';
                     ctx.lineWidth = 3;
@@ -174,37 +178,29 @@
             ctx.restore();
         }
 
-        // TECLADO (PC)
+        // INPUTS DO PC
         window.addEventListener('keydown', (e) => {
             let dx = 0, dy = 0;
             if (e.key === 'ArrowUp' || e.key === 'w')    { dx = 0;  dy = -1; }
             if (e.key === 'ArrowDown' || e.key === 's')  { dx = 0;  dy = 1;  }
             if (e.key === 'ArrowLeft' || e.key === 'a')  { dx = -1; dy = 0;  }
             if (e.key === 'ArrowRight' || e.key === 'd') { dx = 1;  dy = 0;  }
-
             if (dx !== 0 || dy !== 0) EnviarMovimento(dx, dy);
         });
 
-        // TOQUE CELULAR MELHORADO
-        let tStartX = 0;
-        let tStartY = 0;
-
+        // INPUTS DO CELULAR
+        let tStartX = 0, tStartY = 0;
         window.addEventListener('touchstart', (e) => {
-            const touch = e.touches[0];
-            tStartX = touch.clientX;
-            tStartY = touch.clientY;
+            tStartX = e.touches[0].clientX;
+            tStartY = e.touches[0].clientY;
         }, { passive: true });
 
         window.addEventListener('touchmove', (e) => {
-            const touch = e.touches[0];
-            const diffX = touch.clientX - tStartX;
-            const diffY = touch.clientY - tStartY;
+            const diffX = e.touches[0].clientX - tStartX;
+            const diffY = e.touches[0].clientY - tStartY;
             const dist = Math.hypot(diffX, diffY);
-
-            if (dist > 15) {
-                EnviarMovimento(diffX / dist, diffY / dist);
-            }
-        }, { passive: false });
+            if (dist > 10) EnviarMovimento(diffX / dist, diffY / dist);
+        }, { passive: true });
 
         function EnviarMovimento(dx, dy) {
             if (ws.readyState === WebSocket.OPEN) {
