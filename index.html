@@ -46,13 +46,10 @@
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         
-        // Detecta automaticamente se o site está rodando local ou no Render
         const local = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-
-        // Se for local usa ws://localhost:8080, se for no Render altera a URL atual de https para wss
         const wsUrl = local 
             ? 'ws://localhost:8080' 
-            : window.location.href.replace('http', 'ws');
+            : window.location.origin.replace(/^http/, 'ws');
         
         const ws = new WebSocket(wsUrl);
         
@@ -76,7 +73,7 @@
 
             if (data.type === 'gameOver') {
                 alert(`🎮 FIM DE JOGO!\nO jogador ${data.winnerId} levou o pote de R$ ${data.prize.toFixed(2)}!`);
-                location.reload(); // Recarrega a página para reiniciar/entrar em nova aposta
+                location.reload();
             }
 
             if (data.type === 'error') {
@@ -85,16 +82,14 @@
         };
 
         function desenharJogo() {
-            // Limpa a tela a cada frame
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Desenha as trilhas e os jogadores enviados pelo servidor
             Object.values(dadosDoJogo.players).forEach(player => {
                 if (!player.alive) return;
 
-                // 1. Desenha a trilha/rastro do jogador
+                // 1. Desenha o rastro do quadrado
                 ctx.beginPath();
-                ctx.strokeStyle = player.color + "AA"; // Adiciona opacidade à trilha
+                ctx.strokeStyle = player.color + "66"; // Transparência na trilha
                 ctx.lineWidth = 6;
                 player.trail.forEach((ponto, index) => {
                     if (index === 0) ctx.moveTo(ponto.x, ponto.y);
@@ -102,11 +97,11 @@
                 });
                 ctx.stroke();
 
-                // 2. Desenha a cabeça do jogador (quadrado atual)
+                // 2. Desenha o corpo principal (o quadrado)
                 ctx.fillStyle = player.color;
                 ctx.fillRect(player.x - 8, player.y - 8, 16, 16);
 
-                // Destaca se for o seu próprio quadrado
+                // Aplica borda branca apenas no seu personagem
                 if (player.id === meuId) {
                     ctx.strokeStyle = '#ffffff';
                     ctx.lineWidth = 2;
@@ -115,13 +110,12 @@
             });
         }
 
-        // Mapeia os inputs do teclado e envia as direções para o servidor imediatamente
         window.addEventListener('keydown', (e) => {
             let dx = 0, dy = 0;
-            if (e.key === 'ArrowUp')    { dx = 0;  dy = -1; }
-            if (e.key === 'ArrowDown')  { dx = 0;  dy = 1;  }
-            if (e.key === 'ArrowLeft')  { dx = -1; dy = 0;  }
-            if (e.key === 'ArrowRight') { dx = 1;  dy = 0;  }
+            if (e.key === 'ArrowUp' || e.key === 'w')    { dx = 0;  dy = -1; }
+            if (e.key === 'ArrowDown' || e.key === 's')  { dx = 0;  dy = 1;  }
+            if (e.key === 'ArrowLeft' || e.key === 'a')  { dx = -1; dy = 0;  }
+            if (e.key === 'ArrowRight' || e.key === 'd') { dx = 1;  dy = 0;  }
 
             if (dx !== 0 || dy !== 0) {
                 ws.send(JSON.stringify({ type: 'move', dx, dy }));
