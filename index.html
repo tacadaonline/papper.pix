@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Paper.io 360° Prototype</title>
+    <title>Paper.io 360° com Bots</title>
     <style>
         body {
             margin: 0;
@@ -92,7 +92,7 @@
                     renderDados.players[id] = { ...sPlayer };
                 } else {
                     const rPlayer = renderDados.players[id];
-                    rPlayer.x += (sPlayer.x - rPlayer.x) * 0.3; // Interpolação mais rápida para agilidade
+                    rPlayer.x += (sPlayer.x - rPlayer.x) * 0.3;
                     rPlayer.y += (sPlayer.y - rPlayer.y) * 0.3;
                     rPlayer.color = sPlayer.color;
                     rPlayer.trail = sPlayer.trail;
@@ -128,13 +128,14 @@
             ctx.fillStyle = '#14141c';
             ctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
 
+            // Linhas de grade estáveis
             ctx.strokeStyle = "rgba(255, 255, 255, 0.02)";
             ctx.lineWidth = 1;
-            for (let x = 0; x <= MAP_SIZE; x += 50) {
+            for (let x = 0; x <= MAP_SIZE; x += 60) {
                 ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, MAP_SIZE); ctx.stroke();
             }
-            for (let y = 0; y <= MAP_SIZE; y += 50) {
-                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, MAP_SIZE); ctx.stroke();
+            for (let y = 0; y <= MAP_SIZE; y += 60) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(MAP_SIZE, y); ctx.stroke();
             }
 
             ctx.strokeStyle = '#ff3344';
@@ -144,44 +145,36 @@
             Object.values(renderDados.players).forEach(player => {
                 if (!player.alive) return;
 
-                if (player.trail.length > 1) {
+                // Desenha o rastro/trilha
+                if (player.trail && player.trail.length > 1) {
                     ctx.beginPath();
                     ctx.strokeStyle = player.color;
                     ctx.lineWidth = 12;
                     ctx.lineCap = "round";
                     ctx.lineJoin = "round";
-                    ctx.shadowBlur = 8;
-                    ctx.shadowColor = player.color;
-
                     player.trail.forEach((ponto, index) => {
                         if (index === 0) ctx.moveTo(ponto.x, ponto.y);
                         else ctx.lineTo(ponto.x, ponto.y);
                     });
                     ctx.stroke();
-                    ctx.shadowBlur = 0; 
                 }
 
+                // Desenha a cabeça do jogador (Compatível com celulares antigos)
                 ctx.fillStyle = player.color;
-                ctx.beginPath();
-                ctx.roundRect(player.x - 14, player.y - 14, 28, 28, 6);
-                ctx.fill();
+                ctx.fillRect(player.x - 14, player.y - 14, 28, 28);
 
+                // Borda indicadora ao redor do SEU jogador
                 if (player.id === meuId) {
                     ctx.strokeStyle = '#ffffff';
                     ctx.lineWidth = 3;
-                    ctx.shadowBlur = 15;
-                    ctx.shadowColor = '#ffffff';
-                    ctx.beginPath();
-                    ctx.roundRect(player.x - 16, player.y - 16, 32, 32, 8);
-                    ctx.stroke();
-                    ctx.shadowBlur = 0;
+                    ctx.strokeRect(player.x - 17, player.y - 17, 34, 34);
                 }
             });
 
             ctx.restore();
         }
 
-        // CONTROLE DO TECLADO (PC)
+        // TECLADO (PC)
         window.addEventListener('keydown', (e) => {
             let dx = 0, dy = 0;
             if (e.key === 'ArrowUp' || e.key === 'w')    { dx = 0;  dy = -1; }
@@ -192,48 +185,26 @@
             if (dx !== 0 || dy !== 0) EnviarMovimento(dx, dy);
         });
 
-        // 🆕 NOVO CONTROLE TOQUE LIVRE (360 GRAUS PARA CELULAR)
-        let touchId = null;
+        // TOQUE CELULAR MELHORADO
         let tStartX = 0;
         let tStartY = 0;
 
         window.addEventListener('touchstart', (e) => {
-            if (touchId === null) {
-                const touch = e.changedTouches[0];
-                touchId = touch.identifier;
-                tStartX = touch.clientX;
-                tStartY = touch.clientY;
-            }
+            const touch = e.touches[0];
+            tStartX = touch.clientX;
+            tStartY = touch.clientY;
         }, { passive: true });
 
         window.addEventListener('touchmove', (e) => {
-            for (let i = 0; i < e.touches.length; i++) {
-                if (e.touches[i].identifier === touchId) {
-                    const touch = e.touches[i];
-                    
-                    // Calcula a distância do arrasto em relação ao ponto inicial do toque
-                    const diffX = touch.clientX - tStartX;
-                    const diffY = touch.clientY - tStartY;
-                    const dist = Math.hypot(diffX, diffY);
+            const touch = e.touches[0];
+            const diffX = touch.clientX - tStartX;
+            const diffY = touch.clientY - tStartY;
+            const dist = Math.hypot(diffX, diffY);
 
-                    // Só move se o arrasto passar de uma pequena zona morta para evitar tremores
-                    if (dist > 10) {
-                        // Transforma a direção em um vetor unitário livre (valores decimais entre -1 e 1)
-                        const dx = diffX / dist;
-                        const dy = diffY / dist;
-                        EnviarMovimento(dx, dy);
-                    }
-                }
+            if (dist > 15) {
+                EnviarMovimento(diffX / dist, diffY / dist);
             }
-        }, { passive: none });
-
-        window.addEventListener('touchend', (e) => {
-            for (let i = 0; i < e.changedTouches.length; i++) {
-                if (e.changedTouches[i].identifier === touchId) {
-                    touchId = null; // Libera para o próximo toque
-                }
-            }
-        }, { passive: true });
+        }, { passive: false });
 
         function EnviarMovimento(dx, dy) {
             if (ws.readyState === WebSocket.OPEN) {
