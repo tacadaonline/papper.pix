@@ -1,0 +1,125 @@
+<!-- Salve este arquivo como: index.html -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Paper.io Real-Time Bet Prototype</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #1e1e24;
+            color: #fff;
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+        #painel {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 10px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        canvas {
+            border: 4px solid #333;
+            background-color: #2b2b36;
+            box-shadow: 0px 10px 20px rgba(0,0,0,0.5);
+        }
+        .destaque { color: #00ffcc; }
+        .pote { color: #ffcc00; }
+    </style>
+</head>
+<body>
+
+    <div id="painel">
+        <div>ID: <span id="meuId" class="destaque">-</span></div>
+        <div>Seu Saldo: <span id="saldo" class="destaque">R\$ 0,00</span></div>
+        <div>💰 POTE ATUAL: <span id="pote" class="pote">R\$ 0,00</span></div>
+    </div>
+
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Conecta ao servidor WebSocket local
+        const ws = new WebSocket('ws://localhost:8080');
+        
+        let meuId = null;
+        let dadosDoJogo = { players: {}, pot: 0 };
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+
+            if (data.type === 'init') {
+                meuId = data.id;
+                document.getElementById('meuId').innerText = meuId;
+                document.getElementById('saldo').innerText = `R$ ${data.balance.toFixed(2)}`;
+            }
+
+            if (data.type === 'update') {
+                dadosDoJogo = data.gameState;
+                document.getElementById('pote').innerText = `R$ ${dadosDoJogo.pot.toFixed(2)}`;
+                desenharJogo();
+            }
+
+            if (data.type === 'gameOver') {
+                alert(`🎮 FIM DE JOGO!\nO jogador ${data.winnerId} levou o pote de R$ ${data.prize.toFixed(2)}!`);
+                location.reload(); // Recarrega a página para reiniciar/entrar em nova aposta
+            }
+
+            if (data.type === 'error') {
+                alert(data.message);
+            }
+        };
+
+        function desenharJogo() {
+            // Limpa a tela a cada frame
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Desenha as trilhas e os jogadores enviados pelo servidor
+            Object.values(dadosDoJogo.players).forEach(player => {
+                if (!player.alive) return;
+
+                // 1. Desenha a trilha/rastro do jogador
+                ctx.beginPath();
+                ctx.strokeStyle = player.color + "AA"; // Adiciona opacidade à trilha
+                ctx.lineWidth = 6;
+                player.trail.forEach((ponto, index) => {
+                    if (index === 0) ctx.moveTo(ponto.x, ponto.y);
+                    else ctx.lineTo(ponto.x, ponto.y);
+                });
+                ctx.stroke();
+
+                // 2. Desenha a cabeça do jogador (quadrado atual)
+                ctx.fillStyle = player.color;
+                ctx.fillRect(player.x - 8, player.y - 8, 16, 16);
+
+                // Destaca se for o seu próprio quadrado
+                if (player.id === meuId) {
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(player.x - 10, player.y - 10, 20, 20);
+                }
+            });
+        }
+
+        // Mapeia os inputs do teclado e envia as direções para o servidor imediatamente
+        window.addEventListener('keydown', (e) => {
+            let dx = 0, dy = 0;
+            if (e.key === 'ArrowUp')    { dx = 0;  dy = -1; }
+            if (e.key === 'ArrowDown')  { dx = 0;  dy = 1;  }
+            if (e.key === 'ArrowLeft')  { dx = -1; dy = 0;  }
+            if (e.key === 'ArrowRight') { dx = 1;  dy = 0;  }
+
+            if (dx !== 0 || dy !== 0) {
+                ws.send(JSON.stringify({ type: 'move', dx, dy }));
+            }
+        });
+    </script>
+</body>
+</html>
