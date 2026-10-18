@@ -1,109 +1,108 @@
 const WebSocket = require('ws');
-const http = require('http'); // 🆕 Adicionado para gerenciar a porta no Render
+const http = require('http');
 
-// 🆕 Define a porta dinâmica do Render ou a 8080 caso esteja rodando localmente
 const PORT = process.env.PORT || 8080;
 
-// 🆕 Cria um servidor HTTP padrão para receber as requisições do Render
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end('Servidor Multi-Salas ativo via WebSocket!');
+    res.end('Servidor Paper.io Ativo!');
 });
 
-// 🚀 Vincula o WebSocket diretamente ao servidor HTTP (Corrige o Upgrade Required)
 const wss = new WebSocket.Server({ server });
 
-console.log(`🚀 Servidor Multi-Salas com IA e Painel Adm preparado na porta ${PORT}...`);
-
-// Configurações Globais do Jogo (Controladas pelo Administrador)
-let CONFIG_ADM = {
-    buyIn: 2.0,
-    maxPlayers: 10,
-    bancaTaxa: 0.10,
-    dificuldadeBot: 'medio',
-    tempoEsperaBot: 5000,
-    chaveMestreAdm: "MINHA_SENHA_SECRETA_123"
+// Estado Global do Jogo (Simplificado para visualização imediata)
+let gameState = {
+    players: {},
+    pot: 0.00
 };
 
-let rooms = {};
 const CORES = ['#FF5733', '#33FF57', '#3357FF', '#F3FF33', '#FF33F3', '#00FFFF', '#FF9900'];
 
 function gerarId() {
     return '_' + Math.random().toString(36).substr(2, 9);
 }
 
-// ✅ CRIA UMA NOVA SALA
-function criarNovaSala() {
-    const roomId = 'room_' + gerarId();
-
-    rooms[roomId] = {
-        id: roomId,
-        players: [],
-        bots: [],
-        status: "aguardando",
-        createdAt: Date.now(),
-        config: { ...CONFIG_ADM }
-    };
-
-    return roomId;
-}
-
-// ✅ ADICIONA JOGADOR NA SALA
-function adicionarJogador(roomId, ws, nome) {
-    if (!rooms[roomId]) return;
-
-    const player = {
-        id: gerarId(),
-        nome,
-        cor: CORES[Math.floor(Math.random() * CORES.length)],
-        ws
-    };
-
-    rooms[roomId].players.push(player);
-    broadcast(roomId, { tipo: "jogador_entrou", player });
-}
-
-// ✅ ENVIA MENSAGEM PARA TODOS DA SALA
-function broadcast(roomId, data) {
-    if (!rooms[roomId]) return;
-
-    rooms[roomId].players.forEach(p => {
-        if (p.ws.readyState === WebSocket.OPEN) {
-            p.ws.send(JSON.stringify(data));
-        }
-    });
-}
-
-// ✅ EVENTO PRINCIPAL DE CONEXÃO
 wss.on('connection', (ws) => {
-    console.log("Novo cliente conectado!");
+    const playerId = gerarId();
+    console.log(`Jogador conectado: ${playerId}`);
 
+    // Inicializa o jogador em uma posição aleatória do mapa (Canvas 800x600)
+    gameState.players[playerId] = {
+        id: playerId,
+        x: Math.floor(Math.random() * 700) + 50,
+        y: Math.floor(Math.random() * 500) + 50,
+        dx: 0,
+        dy: 0,
+        color: CORES[Math.floor(Math.random() * CORES.length)],
+        trail: [],
+        alive: true,
+        balance: 10.00 // Saldo fictício para teste inicial
+    };
+
+    // Adiciona uma taxa simbólica ao pote para ver o valor subindo
+    gameState.pot += 2.00;
+
+    // Envia os dados iniciais de identificação para este jogador específico
+    ws.send(JSON.stringify({
+        type: 'init',
+        id: playerId,
+        balance: gameState.players[playerId].balance
+    }));
+
+    // Escuta os comandos de movimento vindos do teclado do cliente
     ws.on('message', (msg) => {
         try {
             const data = JSON.parse(msg);
-
-            // Criar sala
-            if (data.tipo === "criar_sala") {
-                const novaSala = criarNovaSala();
-                ws.send(JSON.stringify({ tipo: "sala_criada", sala: novaSala }));
+            if (data.type === 'move' && gameState.players[playerId]?.alive) {
+                // Altera a direção do quadrado de acordo com as setas pressionadas
+                gameState.players[playerId].dx = data.dx * 4; // velocidade do movimento
+                gameState.players[playerId].dy = data.dy * 4;
             }
-
-            // Entrar na sala
-            if (data.tipo === "entrar_sala") {
-                adicionarJogador(data.sala, ws, data.nome);
-            }
-
         } catch (e) {
             console.error("Erro ao processar mensagem:", e);
         }
     });
 
     ws.on('close', () => {
-        console.log("Cliente desconectado.");
+        console.log(`Jogador desconectado: ${playerId}`);
+        delete gameState.players[playerId];
     });
 });
 
-// 🆕 Inicializa o servidor escutando a porta correta
+// MOTOR DO JOGO (GAME LOOP): Roda a cada 100 milissegundos para mover os jogadores e atualizar a tela
+setInterval(() => {
+    Object.values(gameState.players).forEach(player => {
+        if (!player.alive) return;
+
+        // Se o jogador estiver se movendo, guarda a posição antiga na trilha/rastro
+        if (player.dx !== 0 || player.dy !== 0) {
+            player.trail.push({ x: player.x, y: player.y });
+            // Limita o tamanho do rastro para não travar a memória do teste inicial
+            if (player.trail.length > 50) player.trail.shift();
+        }
+
+        // Atualiza a posição atual somando a direção (velocidade)
+        player.x += player.dx;
+        player.y += player.dy;
+
+        // Limita as bordas do Canvas para o quadrado não sumir da tela
+        if (player.x < 0) player.x = 0;
+        if (player.x > 800) player.x = 800;
+        if (player.y < 0) player.y = 0;
+        if (player.y > 600) player.y = 600;
+    });
+
+    // Envia o estado atualizado com a posição de todos os quadrados para todos os clientes conectados
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({
+                type: 'update',
+                gameState: gameState
+            }));
+        }
+    });
+}, 100);
+
 server.listen(PORT, () => {
-    console.log(`✅ Servidor iniciado com sucesso na porta ${PORT}!`);
+    console.log(`🚀 Jogo rodando perfeitamente na porta ${PORT}`);
 });
