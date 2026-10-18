@@ -1,11 +1,21 @@
 const WebSocket = require('ws');
 const http = require('http');
+const fs = require('fs'); // 🆕 Módulo para ler arquivos do servidor
+const path = require('path');
 
 const PORT = process.env.PORT || 8080;
 
+// 🚀 Servidor HTTP atualizado para carregar a interface do jogo automaticamente
 const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end('Servidor Paper.io Ativo!');
+    fs.readFile(path.join(__dirname, 'index.html'), (err, content) => {
+        if (err) {
+            res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end('Erro ao carregar o arquivo index.html no servidor. Certifique-se de que ele está na mesma pasta que o server.js.');
+        } else {
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end(content);
+        }
+    });
 });
 
 const wss = new WebSocket.Server({ server });
@@ -104,5 +114,5 @@ setInterval(() => {
 }, 100);
 
 server.listen(PORT, () => {
-    console.log(`🚀 Jogo rodando perfeitamente na porta ${PORT}`);
+    console.log(`🚀 Jogo rodando perfeitamente e servindo HTML na porta ${PORT}`);
 });
