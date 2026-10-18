@@ -1,7 +1,19 @@
+const http = require('http'); // Adicionado nativo do Node
 const WebSocket = require('ws');
 
-const wss = new WebSocket.Server({ port: 8080 });
-console.log("🚀 Servidor Multi-Salas com IA e Painel Adm rodando na porta 8080...");
+// 1. Usa a porta dinâmica do Render ou a 8080 caso esteja rodando localmente
+const PORT = process.env.PORT || 8080;
+
+// 2. Cria um servidor HTTP básico exigido pelo Render para fazer o roteamento
+const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Servidor WebSocket ativo.');
+});
+
+// 3. Vincula o servidor WebSocket diretamente ao servidor HTTP principal
+const wss = new WebSocket.Server({ server });
+
+console.log(`🚀 Servidor Multi-Salas com IA e Painel Adm configurado para a porta ${PORT}...`);
 
 // Configurações Globais do Jogo (Controladas pelo Administrador)
 let CONFIG_ADM = {
@@ -91,4 +103,7 @@ wss.on('connection', (ws) => {
     });
 });
 
-console.log("✅ Servidor iniciado sem erros!");
+// 4. Inicia o servidor escutando a porta correta
+server.listen(PORT, () => {
+    console.log(`✅ Servidor iniciado com sucesso na porta ${PORT}!`);
+});
