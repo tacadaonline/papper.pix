@@ -3,36 +3,38 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>Paper.io Real-Time Bet Prototype</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Paper.io Real-Time Prototype</title>
     <style>
         body {
             margin: 0;
-            background-color: #121216;
+            background-color: #0c0c0e;
             color: #fff;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
             overflow: hidden;
+            touch-action: none; /* Impede zoom e rolagem nativa no celular */
         }
         #painel {
+            position: fixed;
+            top: 15px;
+            left: 50%;
+            transform: translateX(-50%);
             display: flex;
-            gap: 30px;
-            margin-bottom: 15px;
-            font-size: 16px;
-            background: rgba(255, 255, 255, 0.05);
-            padding: 12px 25px;
-            border-radius: 10px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            gap: 20px;
+            font-size: 14px;
+            background: rgba(12, 12, 14, 0.85);
+            padding: 10px 20px;
+            border-radius: 50px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            z-index: 10;
+            white-space: nowrap;
+            backdrop-filter: blur(5px);
         }
         canvas {
-            border: 2px solid rgba(255, 255, 255, 0.1);
-            background-color: #181824;
-            box-shadow: 0px 15px 35px rgba(0, 0, 0, 0.7);
-            border-radius: 8px;
+            display: block;
+            width: 100vw;
+            height: 100vh;
         }
         .destaque { color: #00ffcc; font-weight: bold; }
         .pote { color: #ffcc00; font-weight: bold; }
@@ -42,16 +44,24 @@
 
     <div id="painel">
         <div>ID: <span id="meuId" class="destaque">-</span></div>
-        <div>Seu Saldo: <span id="saldo" class="destaque">R\$ 0,00</span></div>
-        <div>💰 POTE ATUAL: <span id="pote" class="pote">R\$ 0,00</span></div>
+        <div>Saldo: <span id="saldo" class="destaque">R\$ 0,00</span></div>
+        <div>💰 POTE: <span id="pote" class="pote">R\$ 0,00</span></div>
     </div>
 
-    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <canvas id="gameCanvas"></canvas>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         
+        // Ajusta o tamanho do canvas dinamicamente para tela cheia
+        function redimensionarCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', redimensionarCanvas);
+        redimensionarCanvas();
+
         const local = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
         const wsUrl = local 
             ? 'ws://localhost:8080' 
@@ -60,44 +70,38 @@
         const ws = new WebSocket(wsUrl);
         
         let meuId = null;
-        let servidoresDados = { players: {}, pot: 0 };
-        let renderDados = { players: {} }; // Guarda posições interpoladas (suaves)
+        let servidoresDados = { players: {}, pot: 0, mapSize: 3000 };
+        let renderDados = { players: {} };
 
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
-
             if (data.type === 'init') {
                 meuId = data.id;
                 document.getElementById('meuId').innerText = meuId;
                 document.getElementById('saldo').innerText = `R$ ${data.balance.toFixed(2)}`;
             }
-
             if (data.type === 'update') {
                 servidoresDados = data.gameState;
                 document.getElementById('pote').innerText = `R$ ${servidoresDados.pot.toFixed(2)}`;
             }
         };
 
-        // LOOP DE RENDERIZAÇÃO PROFISSIONAL (60 FPS)
         function gameLoop() {
-            // Atualiza posições visuais suavizadas (Interpolação)
             Object.keys(servidoresDados.players).forEach(id => {
                 const sPlayer = servidoresDados.players[id];
-                
                 if (!renderDados.players[id]) {
                     renderDados.players[id] = { ...sPlayer };
                 } else {
                     const rPlayer = renderDados.players[id];
-                    // Move o elemento visual 20% mais perto da posição real do servidor a cada frame
-                    rPlayer.x += (sPlayer.x - rPlayer.x) * 0.22;
-                    rPlayer.y += (sPlayer.y - rPlayer.y) * 0.22;
+                    // Interpolação suave de movimento
+                    rPlayer.x += (sPlayer.x - rPlayer.x) * 0.25;
+                    rPlayer.y += (sPlayer.y - rPlayer.y) * 0.25;
                     rPlayer.color = sPlayer.color;
                     rPlayer.trail = sPlayer.trail;
                     rPlayer.alive = sPlayer.alive;
                 }
             });
 
-            // Limpa dados de quem desconectou
             Object.keys(renderDados.players).forEach(id => {
                 if (!servidoresDados.players[id]) delete renderDados.players[id];
             });
@@ -109,28 +113,56 @@
         function desenharJogo() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Desenha uma grade de fundo sutil para dar noção de movimento
-            ctx.strokeStyle = "rgba(255, 255, 255, 0.02)";
-            ctx.lineWidth = 1;
-            for (let x = 0; x < canvas.width; x += 40) {
-                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
-            }
-            for (let y = 0; y < canvas.height; y += 40) {
-                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+            // Encontra o seu jogador para centralizar a câmera nele
+            const meuJogador = renderDados.players[meuId];
+            
+            // Posição padrão caso o jogador ainda não tenha carregado
+            let camX = servidoresDados.mapSize / 2 - canvas.width / 2;
+            let camY = servidoresDados.mapSize / 2 - canvas.height / 2;
+
+            if (meuJogador) {
+                // Centraliza a câmera no quadrado do jogador
+                camX = meuJogador.x - canvas.width / 2;
+                camY = meuJogador.y - canvas.height / 2;
             }
 
-            // Desenha os jogadores suavizados
+            ctx.save();
+            // Move todo o contexto do Canvas na direção oposta da câmera
+            ctx.translate(-camX, -camY);
+
+            const MAP_SIZE = servidoresDados.mapSize || 3000;
+
+            // 1. Desenha o fundo do mapa gigante
+            ctx.fillStyle = '#14141c';
+            ctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
+
+            // 2. Linhas de grade (Apenas dentro do mapa gigante)
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.02)";
+            ctx.lineWidth = 1;
+            for (let x = 0; x <= MAP_SIZE; x += 50) {
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, MAP_SIZE); ctx.stroke();
+            }
+            for (let y = 0; y <= MAP_SIZE; y += 50) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(MAP_SIZE, y); ctx.stroke();
+            }
+
+            // 3. Bordas perigosas do mapa (Fim do mundo)
+            ctx.strokeStyle = '#ff3344';
+            ctx.lineWidth = 5;
+            ctx.strokeRect(0, 0, MAP_SIZE, MAP_SIZE);
+
+            // 4. Desenha as trilhas e os jogadores
             Object.values(renderDados.players).forEach(player => {
                 if (!player.alive) return;
 
-                // 1. Desenha a trilha neon com efeito de brilho
-                if (player.trail.length > 0) {
+                // Desenha a Trilha com Brilho Neon
+                if (player.trail.length > 1) {
                     ctx.beginPath();
                     ctx.strokeStyle = player.color;
-                    ctx.lineWidth = 8;
+                    ctx.lineWidth = 12;
                     ctx.lineCap = "round";
                     ctx.lineJoin = "round";
-                    ctx.shadowBlur = 10;
+                    ctx.shadowBlur = 8;
                     ctx.shadowColor = player.color;
 
                     player.trail.forEach((ponto, index) => {
@@ -138,30 +170,31 @@
                         else ctx.lineTo(ponto.x, ponto.y);
                     });
                     ctx.stroke();
-                    ctx.shadowBlur = 0; // Reseta o blur para o resto
+                    ctx.shadowBlur = 0; 
                 }
 
-                // 2. Desenha o quadrado principal
+                // Desenha a Cabeça (Quadrado do Jogador)
                 ctx.fillStyle = player.color;
                 ctx.beginPath();
-                ctx.roundRect(player.x - 10, player.y - 10, 20, 20, 4); // Quadrado levemente arredondado
+                ctx.roundRect(player.x - 14, player.y - 14, 28, 28, 6);
                 ctx.fill();
 
-                // Destaca o seu próprio personagem com uma borda neon branca
                 if (player.id === meuId) {
                     ctx.strokeStyle = '#ffffff';
                     ctx.lineWidth = 3;
-                    ctx.shadowBlur = 12;
+                    ctx.shadowBlur = 15;
                     ctx.shadowColor = '#ffffff';
                     ctx.beginPath();
-                    ctx.roundRect(player.x - 12, player.y - 12, 24, 24, 6);
+                    ctx.roundRect(player.x - 16, player.y - 16, 32, 32, 8);
                     ctx.stroke();
                     ctx.shadowBlur = 0;
                 }
             });
+
+            ctx.restore(); // Restaura para manter o painel fixo no topo da tela
         }
 
-        // Captura comandos de movimento instantâneos
+        // CONTROLE DO TECLADO (PC)
         window.addEventListener('keydown', (e) => {
             let dx = 0, dy = 0;
             if (e.key === 'ArrowUp' || e.key === 'w')    { dx = 0;  dy = -1; }
@@ -169,12 +202,39 @@
             if (e.key === 'ArrowLeft' || e.key === 'a')  { dx = -1; dy = 0;  }
             if (e.key === 'ArrowRight' || e.key === 'd') { dx = 1;  dy = 0;  }
 
-            if (dx !== 0 || dy !== 0) {
-                ws.send(JSON.stringify({ type: 'move', dx, dy }));
-            }
+            if (dx !== 0 || dy !== 0) EnviarMovimento(dx, dy);
         });
 
-        // Inicializa o motor visual do navegador
+        // CONTROLE POR TOQUE/DESLIZAR (CELULAR)
+        let touchStartX = 0;
+        let touchStartY = 0;
+        window.addEventListener('touchstart', (e) => {
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+        }, { passive: true });
+
+        window.addEventListener('touchend', (e) => {
+            const diffX = e.changedTouches[0].clientX - touchStartX;
+            const diffY = e.changedTouches[0].clientY - touchStartY;
+            
+            // Verifica se o movimento foi longo o suficiente para contar como deslize
+            if (Math.abs(diffX) > 30 || Math.abs(diffY) > 30) {
+                if (Math.abs(diffX) > Math.abs(diffY)) {
+                    // Movimento Horizontal
+                    EnviarMovimento(diffX > 0 ? 1 : -1, 0);
+                } else {
+                    // Movimento Vertical
+                    EnviarMovimento(0, diffY > 0 ? 1 : -1);
+                }
+            }
+        }, { passive: true });
+
+        function EnviarMovimento(dx, dy) {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'move', dx, dy }));
+            }
+        }
+
         requestAnimationFrame(gameLoop);
     </script>
 </body>
