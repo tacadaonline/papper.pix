@@ -1,328 +1,223 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Paper.io Clone</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Conquista de Território</title>
   <style>
-    :root {
-      --bg: #090e14;
-      --panel: rgba(12, 18, 24, 0.85);
-      --line: rgba(255,255,255,0.08);
-      --accent: #23f0c3;
-      --bg: #080d13;
-      --panel: rgba(13, 19, 24, 0.85);
-      --line: rgba(255,255,255,0.08);
-      --accent: #24f0c6;
-      --gold: #ffca28;
-      --danger: #ff4d6d;
-    }
-
-    * { box-sizing: border-box; }
-
-    html, body {
+    body {
       margin: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: radial-gradient(circle at top, #111b25 0%, var(--bg) 100%);
-      background: radial-gradient(circle at top, #101b25 0%, var(--bg) 100%);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #101827;
       color: white;
-      font-family: Arial, Helvetica, sans-serif;
-      touch-action: none;
+      font: 16px system-ui, sans-serif;
     }
 
-    #hud {
-      position: fixed;
-      top: 14px;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      gap: 18px;
-      align-items: center;
-      padding: 12px 18px;
-      border-radius: 14px;
-      border: 1px solid var(--line);
-      background: var(--panel);
-      box-shadow: 0 14px 28px rgba(0,0,0,0.25);
-      z-index: 30;
-      font-size: 14px;
-      white-space: nowrap;
-    }
-
-    .tag { font-weight: 700; }
-    .accent { color: var(--accent); }
-    .gold { color: var(--gold); }
-
+    main { text-align: center; padding: 20px; }
     canvas {
       display: block;
-      width: 100vw;
-      height: 100vh;
-      background: #0f171d;
-      cursor: crosshair;
+      max-width: 100%;
+      border: 2px solid #40516b;
+      border-radius: 8px;
+      background: #172235;
     }
+    button {
+      margin-top: 14px;
+      padding: 9px 16px;
+      border: 0;
+      border-radius: 6px;
+      background: #57e389;
+      color: #102018;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    #status { min-height: 24px; }
   </style>
 </head>
 <body>
-  <div id="hud">
-    <div>ID: <span id="meuId" class="tag accent">-</span></div>
-    <div>Território: <span id="score" class="tag accent">0</span></div>
-    <div>Saldo: <span id="saldo" class="tag accent">R$ 0,00</span></div>
-    <div>Pote: <span id="pote" class="tag gold">R$ 0,00</span></div>
-  </div>
-
-  <canvas id="gameCanvas"></canvas>
+  <main>
+    <h1>Conquista de Território</h1>
+    <p>Use as setas ou WASD. Feche o rastro voltando à sua área!</p>
+    <canvas id="game"></canvas>
+    <p id="status"></p>
+    <button onclick="reiniciar()">Recomeçar</button>
+  </main>
 
   <script>
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
+    const canvas = document.querySelector("#game");
+    const ctx = canvas.getContext("2d");
+    const statusEl = document.querySelector("#status");
 
-    let meuId = null;
-    let estadoServidor = {
-      players: {},
-      grid: {},
-      mapRows: 80,
-      mapCols: 80,
-      blockSize: 20,
-      pot: 0
-    };
+    const tamanho = 20;
+    const colunas = 36;
+    const linhas = 24;
 
-    let renderPlayers = {};
-    let particulas = [];
-    let pointer = null;
+    canvas.width = colunas * tamanho;
+    canvas.height = linhas * tamanho;
 
-    function redimensionarCanvas() {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    }
+    let mapa, jogador, direcao, proximaDirecao, rastro, intervalo, acabou;
 
-    function criarParticulas(x, y, cor) {
-      for (let i = 0; i < 26; i++) {
-        particulas.push({
-          x,
-          y,
-          vx: (Math.random() - 0.5) * 5.7,
-          vy: (Math.random() - 0.5) * 5.7,
-          raio: Math.random() * 3 + 2,
-          cor,
-          alpha: 1,
-          vida: 0.04 + Math.random() * 0.04
-        });
+    function reiniciar() {
+      clearInterval(intervalo);
+
+      mapa = Array.from({ length: linhas }, () => Array(colunas).fill(0));
+
+      // Área inicial
+      for (let y = 9; y <= 14; y++) {
+        for (let x = 14; x <= 21; x++) mapa[y][x] = 1;
       }
+
+      jogador = { x: 18, y: 11 };
+      direcao = { x: 1, y: 0 };
+      proximaDirecao = { x: 1, y: 0 };
+      rastro = [];
+      acabou = false;
+
+      statusEl.textContent = "Território: 48 quadrados";
+      desenhar();
+      intervalo = setInterval(passo, 115);
     }
 
-    function atualizarHud() {
-      const player = estadoServidor.players[meuId];
-      if (player) {
-        document.getElementById('score').textContent = String(player.score || 0);
-        document.getElementById('saldo').textContent = `R$ ${(Number(player.balance || 0)).toFixed(2)}`;
-      }
-      document.getElementById('pote').textContent = `R$ ${(Number(estadoServidor.pot || 0)).toFixed(2)}`;
+    function mudarDirecao(dx, dy) {
+      // Impede uma volta instantânea para trás
+      if (dx === -direcao.x && dy === -direcao.y) return;
+      proximaDirecao = { x: dx, y: dy };
     }
 
-    function enviarDirecao(dx, dy) {
-      const ws = window.__ws;
-      if (!meuId || !ws || ws.readyState !== WebSocket.OPEN) return;
-      const length = Math.hypot(dx, dy);
-      if (length === 0) return;
-      ws.send(JSON.stringify({ type: 'move', dx: dx / length, dy: dy / length }));
-    }
-
-    function getCamera() {
-      const player = renderPlayers[meuId];
-      if (!player) return { x: 0, y: 0 };
-      return {
-        x: player.x - canvas.width / 2,
-        y: player.y - canvas.height / 2
+    document.addEventListener("keydown", (e) => {
+      const tecla = e.key.toLowerCase();
+      const controles = {
+        arrowup: [0, -1], w: [0, -1],
+        arrowdown: [0, 1], s: [0, 1],
+        arrowleft: [-1, 0], a: [-1, 0],
+        arrowright: [1, 0], d: [1, 0]
       };
-    }
 
-    function atualizarRender() {
-      const size = estadoServidor.blockSize || 20;
-
-      Object.keys(estadoServidor.players).forEach((id) => {
-        const serverPlayer = estadoServidor.players[id];
-        if (!serverPlayer) return;
-
-        const alvoX = serverPlayer.x * size + size / 2;
-        const alvoY = serverPlayer.y * size + size / 2;
-
-        if (!renderPlayers[id]) {
-          renderPlayers[id] = {
-            x: alvoX,
-            y: alvoY,
-            color: serverPlayer.color,
-            alive: serverPlayer.alive,
-            score: serverPlayer.score || 0
-          };
-          return;
-        }
-
-        const render = renderPlayers[id];
-        render.x += (alvoX - render.x) * 0.35;
-        render.y += (alvoY - render.y) * 0.35;
-        render.color = serverPlayer.color;
-        render.alive = serverPlayer.alive;
-        render.score = serverPlayer.score || 0;
-      });
-
-      Object.keys(renderPlayers).forEach((id) => {
-        if (!estadoServidor.players[id]) delete renderPlayers[id];
-      });
-
-      particulas.forEach((particula, index) => {
-        particula.x += particula.vx;
-        particula.y += particula.vy;
-        particula.alpha -= particula.vida;
-        if (particula.alpha <= 0) particulas.splice(index, 1);
-      });
-    }
-
-    function desenharMapa() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      const size = estadoServidor.blockSize || 20;
-      const totalWidth = estadoServidor.mapCols * size;
-      const totalHeight = estadoServidor.mapRows * size;
-      const camera = getCamera();
-
-      ctx.save();
-      ctx.translate(-camera.x, -camera.y);
-
-      ctx.fillStyle = '#0d171d';
-      ctx.fillRect(0, 0, totalWidth, totalHeight);
-
-      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-      ctx.lineWidth = 1;
-      for (let r = 0; r <= estadoServidor.mapRows; r++) {
-        ctx.beginPath();
-        ctx.moveTo(0, r * size);
-        ctx.lineTo(totalWidth, r * size);
-        ctx.stroke();
+      if (controles[tecla]) {
+        e.preventDefault();
+        mudarDirecao(...controles[tecla]);
       }
-      for (let c = 0; c <= estadoServidor.mapCols; c++) {
-        ctx.beginPath();
-        ctx.moveTo(c * size, 0);
-        ctx.lineTo(c * size, totalHeight);
-        ctx.stroke();
-      }
-
-      Object.keys(estadoServidor.grid).forEach((key) => {
-        const [row, col] = key.split(',').map(Number);
-        const cell = estadoServidor.grid[key];
-        if (!cell) return;
-        ctx.fillStyle = `${cell.color}${cell.kind === 'base' ? '55' : 'bb'}`;
-        ctx.fillRect(col * size, row * size, size, size);
-      });
-
-      ctx.strokeStyle = '#ff4d6d';
-      ctx.lineWidth = 5;
-      ctx.strokeRect(0, 0, totalWidth, totalHeight);
-
-      Object.values(renderPlayers).forEach((player) => {
-        if (!player || !player.alive) return;
-        const x = player.x - 16;
-        const y = player.y - 16;
-        ctx.fillStyle = player.color;
-        ctx.fillRect(x, y, 32, 32);
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(x - 2, y - 2, 36, 36);
-      });
-
-      particulas.forEach((p) => {
-        ctx.save();
-        ctx.globalAlpha = p.alpha;
-        ctx.fillStyle = p.cor;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.raio, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      });
-
-      ctx.restore();
-    }
-
-    function atualizarDirecaoMouse() {
-      if (!pointer || !meuId) return;
-      const player = renderPlayers[meuId];
-      if (!player) return;
-
-      const targetWorldX = player.x + (pointer.x - canvas.width / 2);
-      const targetWorldY = player.y + (pointer.y - canvas.height / 2);
-      const dx = targetWorldX - player.x;
-      const dy = targetWorldY - player.y;
-      enviarDirecao(dx, dy);
-    }
-
-    function gameLoop() {
-      atualizarDirecaoMouse();
-      atualizarRender();
-      desenharMapa();
-      requestAnimationFrame(gameLoop);
-    }
-
-    const local = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const wsUrl = local ? 'ws://localhost:8080' : window.location.origin.replace(/^http/, 'ws');
-    const ws = new WebSocket(wsUrl);
-    window.__ws = ws;
-
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-
-      if (data.type === 'init') {
-        meuId = data.id;
-        document.getElementById('meuId').textContent = meuId;
-        document.getElementById('saldo').textContent = `R$ ${(Number(data.balance || 0)).toFixed(2)}`;
-      }
-
-      if (data.type === 'update') {
-        const anterior = estadoServidor.players;
-        Object.keys(anterior).forEach((id) => {
-          const antigo = anterior[id];
-          const novo = data.gameState.players[id];
-          if (antigo && antigo.alive && novo && !novo.alive) {
-            const px = antigo.x * (estadoServidor.blockSize || 20) + 12;
-            const py = antigo.y * (estadoServidor.blockSize || 20) + 12;
-            criarParticulas(px, py, antigo.color);
-          }
-        });
-
-        estadoServidor = data.gameState;
-        atualizarHud();
-      }
-
-      if (data.type === 'gameOver' && data.id === meuId) {
-        alert('💥 Você morreu! Recarregando partida...');
-        location.reload();
-      }
-    };
-
-    window.addEventListener('keydown', (event) => {
-      let dx = 0;
-      let dy = 0;
-
-      if (event.key === 'ArrowUp' || event.key.toLowerCase() === 'w') dy = -1;
-      if (event.key === 'ArrowDown' || event.key.toLowerCase() === 's') dy = 1;
-      if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') dx = -1;
-      if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd') dx = 1;
-
-      if (dx || dy) enviarDirecao(dx, dy);
     });
 
-    window.addEventListener('pointermove', (event) => {
-      pointer = { x: event.clientX, y: event.clientY };
-    }, { passive: true });
+    function passo() {
+      if (acabou) return;
 
-    window.addEventListener('touchmove', (event) => {
-      if (!event.touches || !event.touches[0]) return;
-      const touch = event.touches[0];
-      pointer = { x: touch.clientX, y: touch.clientY };
-    }, { passive: true });
+      direcao = proximaDirecao;
+      jogador.x += direcao.x;
+      jogador.y += direcao.y;
 
-    window.addEventListener('resize', redimensionarCanvas);
-    redimensionarCanvas();
-    requestAnimationFrame(gameLoop);
+      if (
+        jogador.x < 0 || jogador.x >= colunas ||
+        jogador.y < 0 || jogador.y >= linhas
+      ) {
+        fimDeJogo();
+        return;
+      }
+
+      const casa = mapa[jogador.y][jogador.x];
+
+      // Entrar no próprio rastro encerra a partida
+      if (casa === 2) {
+        fimDeJogo();
+        return;
+      }
+
+      if (casa === 1) {
+        if (rastro.length) conquistar();
+      } else {
+        mapa[jogador.y][jogador.x] = 2;
+        rastro.push({ x: jogador.x, y: jogador.y });
+      }
+
+      desenhar();
+    }
+
+    function conquistar() {
+      // Marca o exterior: espaços vazios alcançáveis pelas bordas.
+      const exterior = Array.from(
+        { length: linhas },
+        () => Array(colunas).fill(false)
+      );
+      const fila = [];
+
+      function adicionar(x, y) {
+        if (
+          x >= 0 && x < colunas && y >= 0 && y < linhas &&
+          !exterior[y][x] && mapa[y][x] === 0
+        ) {
+          exterior[y][x] = true;
+          fila.push({ x, y });
+        }
+      }
+
+      for (let x = 0; x < colunas; x++) {
+        adicionar(x, 0);
+        adicionar(x, linhas - 1);
+      }
+      for (let y = 0; y < linhas; y++) {
+        adicionar(0, y);
+        adicionar(colunas - 1, y);
+      }
+
+      for (let i = 0; i < fila.length; i++) {
+        const { x, y } = fila[i];
+        adicionar(x + 1, y);
+        adicionar(x - 1, y);
+        adicionar(x, y + 1);
+        adicionar(x, y - 1);
+      }
+
+      // Converte o rastro e as áreas fechadas em território.
+      for (let y = 0; y < linhas; y++) {
+        for (let x = 0; x < colunas; x++) {
+          if (mapa[y][x] === 2 || (mapa[y][x] === 0 && !exterior[y][x])) {
+            mapa[y][x] = 1;
+          }
+        }
+      }
+
+      rastro = [];
+
+      const total = mapa.flat().filter(casa => casa === 1).length;
+      statusEl.textContent =
+        `Território: ${total} quadrados (${Math.floor(total / (colunas * linhas) * 100)}%)`;
+    }
+
+    function fimDeJogo() {
+      acabou = true;
+      statusEl.textContent = "Fim de jogo! Clique em Recomeçar para tentar de novo.";
+      desenhar();
+    }
+
+    function desenhar() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      for (let y = 0; y < linhas; y++) {
+        for (let x = 0; x < colunas; x++) {
+          if (mapa[y][x] === 1) ctx.fillStyle = "#32b86a";
+          else if (mapa[y][x] === 2) ctx.fillStyle = "#ffcc4d";
+          else ctx.fillStyle = "#172235";
+
+          ctx.fillRect(
+            x * tamanho, y * tamanho,
+            tamanho - 1, tamanho - 1
+          );
+        }
+      }
+
+      // Jogador
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(
+        jogador.x * tamanho + 3,
+        jogador.y * tamanho + 3,
+        tamanho - 6,
+        tamanho - 6
+      );
+    }
+
+    reiniciar();
   </script>
 </body>
 </html>
