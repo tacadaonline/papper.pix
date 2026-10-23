@@ -243,7 +243,6 @@
       const player = renderPlayers[meuId];
       if (!player) return;
 
-      const camera = getCamera();
       const targetWorldX = player.x + (pointer.x - canvas.width / 2);
       const targetWorldY = player.y + (pointer.y - canvas.height / 2);
       const dx = targetWorldX - player.x;
