@@ -1,333 +1,317 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Paper.io Clone</title>
-    <style>
-        :root {
-            --bg: #070b12;
-            --panel: rgba(15, 20, 28, 0.9);
-            --line: rgba(255,255,255,0.08);
-            --accent: #00ffcc;
-            --gold: #ffcc00;
-            --danger: #ff4d6d;
-        }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Paper.io Clone</title>
+  <style>
+    :root {
+      --bg: #0a1017;
+      --panel: rgba(10, 16, 23, 0.82);
+      --line: rgba(255,255,255,0.08);
+      --accent: #19f0c5;
+      --gold: #ffca28;
+      --danger: #ff496d;
+    }
 
-        * { box-sizing: border-box; }
+    * { box-sizing: border-box; }
 
-        html, body {
-            margin: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            background: radial-gradient(circle at top, #111827 0%, var(--bg) 100%);
-            color: white;
-            font-family: Arial, Helvetica, sans-serif;
-            touch-action: none;
-        }
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: radial-gradient(circle at top, #101b26 0%, var(--bg) 100%);
+      color: white;
+      font-family: Arial, Helvetica, sans-serif;
+      touch-action: none;
+    }
 
-        #hud {
-            position: fixed;
-            top: 14px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
-            gap: 22px;
-            align-items: center;
-            padding: 12px 22px;
-            border-radius: 14px;
-            background: var(--panel);
-            border: 1px solid var(--line);
-            box-shadow: 0 10px 25px rgba(0,0,0,0.25);
-            z-index: 20;
-            font-size: 14px;
-        }
+    #hud {
+      position: fixed;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 18px;
+      align-items: center;
+      padding: 12px 18px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      box-shadow: 0 14px 28px rgba(0,0,0,0.25);
+      z-index: 30;
+      font-size: 14px;
+      white-space: nowrap;
+    }
 
-        .tag { font-weight: 700; }
-        .accent { color: var(--accent); }
-        .gold { color: var(--gold); }
+    .tag { font-weight: 700; }
+    .accent { color: var(--accent); }
+    .gold { color: var(--gold); }
 
-        canvas {
-            display: block;
-            width: 100vw;
-            height: 100vh;
-            background: #0d1217;
-        }
-    </style>
+    #gameCanvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      background: #0f171d;
+      cursor: crosshair;
+    }
+  </style>
 </head>
 <body>
-    <div id="hud">
-        <div>ID: <span id="meuId" class="tag accent">-</span></div>
-        <div>Território: <span id="score" class="tag accent">0</span></div>
-        <div>Saldo: <span id="saldo" class="tag accent">R$ 0,00</span></div>
-        <div>Pote: <span id="pote" class="tag gold">R$ 0,00</span></div>
-    </div>
+  <div id="hud">
+    <div>ID: <span id="meuId" class="tag accent">-</span></div>
+    <div>Território: <span id="score" class="tag accent">0</span></div>
+    <div>Saldo: <span id="saldo" class="tag accent">R$ 0,00</span></div>
+    <div>Pote: <span id="pote" class="tag gold">R$ 0,00</span></div>
+  </div>
 
-    <canvas id="gameCanvas"></canvas>
+  <canvas id="gameCanvas"></canvas>
 
-    <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
 
-        let meuId = null;
-        let estadoServidor = {
-            players: {},
-            grid: {},
-            mapRows: 60,
-            mapCols: 60,
-            blockSize: 32,
-            pot: 0
-        };
-        let renderPlayers = {};
-        let particulas = [];
-        let pontoInicialToque = null;
+    let meuId = null;
+    let estadoServidor = {
+      players: {},
+      grid: {},
+      mapRows: 60,
+      mapCols: 60,
+      blockSize: 22,
+      pot: 0
+    };
 
-        function redimensionarCanvas() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+    let renderPlayers = {};
+    let particulas = [];
+    let pointerTarget = null;
+
+    function redimensionarCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+
+    function criarParticulas(x, y, cor) {
+      for (let i = 0; i < 26; i++) {
+        particulas.push({
+          x,
+          y,
+          vx: (Math.random() - 0.5) * 5.5,
+          vy: (Math.random() - 0.5) * 5.5,
+          raio: Math.random() * 3 + 2,
+          cor,
+          alpha: 1,
+          vida: 0.04 + Math.random() * 0.04
+        });
+      }
+    }
+
+    function atualizarHud() {
+      const jogador = estadoServidor.players[meuId];
+      if (jogador) {
+        document.getElementById('score').textContent = String(jogador.score || 0);
+        document.getElementById('saldo').textContent = `R$ ${(Number(jogador.balance || 0)).toFixed(2)}`;
+      }
+      document.getElementById('pote').textContent = `R$ ${(Number(estadoServidor.pot || 0)).toFixed(2)}`;
+    }
+
+    function enviarDirecao(dx, dy) {
+      if (!meuId) return;
+      const length = Math.hypot(dx, dy);
+      if (!length) return;
+      const ws = window.__ws;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'move', dx: dx / length, dy: dy / length }));
+      }
+    }
+
+    function atualizarRender() {
+      const size = estadoServidor.blockSize || 22;
+
+      Object.keys(estadoServidor.players).forEach((id) => {
+        const serverPlayer = estadoServidor.players[id];
+        if (!serverPlayer) return;
+
+        const alvoX = serverPlayer.x * size + size / 2;
+        const alvoY = serverPlayer.y * size + size / 2;
+
+        if (!renderPlayers[id]) {
+          renderPlayers[id] = { x: alvoX, y: alvoY, color: serverPlayer.color, alive: serverPlayer.alive, score: serverPlayer.score || 0 };
+          return;
         }
 
-        function criarParticulas(x, y, cor) {
-            for (let i = 0; i < 26; i++) {
-                particulas.push({
-                    x,
-                    y,
-                    vx: (Math.random() - 0.5) * 5.4,
-                    vy: (Math.random() - 0.5) * 5.4,
-                    raio: Math.random() * 3 + 2,
-                    cor,
-                    alpha: 1,
-                    vida: Math.random() * 0.04 + 0.02
-                });
-            }
-        }
+        const render = renderPlayers[id];
+        render.x += (alvoX - render.x) * 0.35;
+        render.y += (alvoY - render.y) * 0.35;
+        render.color = serverPlayer.color;
+        render.alive = serverPlayer.alive;
+        render.score = serverPlayer.score || 0;
+      });
 
-        function atualizarHud() {
-            const meuJogador = estadoServidor.players[meuId] || null;
-            if (meuJogador) {
-                document.getElementById('score').textContent = String(meuJogador.score || 0);
-                document.getElementById('saldo').textContent = `R$ ${Number(meuJogador.balance || 0).toFixed(2)}`;
-            }
-            document.getElementById('pote').textContent = `R$ ${Number(estadoServidor.pot || 0).toFixed(2)}`;
-        }
+      Object.keys(renderPlayers).forEach((id) => {
+        if (!estadoServidor.players[id]) delete renderPlayers[id];
+      });
 
-        const local = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        const wsUrl = local ? 'ws://localhost:8080' : window.location.origin.replace(/^http/, 'ws');
-        const ws = new WebSocket(wsUrl);
+      particulas.forEach((p, index) => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.alpha -= p.vida;
+        if (p.alpha <= 0) particulas.splice(index, 1);
+      });
+    }
 
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
+    function desenharMapa() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            if (data.type === 'init') {
-                meuId = data.id;
-                document.getElementById('meuId').textContent = meuId;
-                document.getElementById('saldo').textContent = `R$ ${Number(data.balance || 0).toFixed(2)}`;
-            }
+      const size = estadoServidor.blockSize || 22;
+      const totalWidth = estadoServidor.mapCols * size;
+      const totalHeight = estadoServidor.mapRows * size;
 
-            if (data.type === 'update') {
-                const anterior = estadoServidor.players;
-                Object.keys(anterior).forEach(id => {
-                    const jogadorAntigo = anterior[id];
-                    const jogadorNovo = data.gameState.players[id];
-                    if (jogadorAntigo && jogadorAntigo.alive && jogadorNovo && !jogadorNovo.alive) {
-                        criarParticulas((jogadorAntigo.col * (estadoServidor.blockSize || 32)) + 16, (jogadorAntigo.row * (estadoServidor.blockSize || 32)) + 16, jogadorAntigo.color);
-                    }
-                });
+      const jogadorAtual = renderPlayers[meuId];
+      let cameraX = totalWidth / 2 - canvas.width / 2;
+      let cameraY = totalHeight / 2 - canvas.height / 2;
 
-                estadoServidor = data.gameState;
-                atualizarHud();
-            }
+      if (jogadorAtual) {
+        cameraX = jogadorAtual.x - canvas.width / 2;
+        cameraY = jogadorAtual.y - canvas.height / 2;
+      }
 
-            if (data.type === 'gameOver' && data.id === meuId) {
-                alert('💥 Você morreu! Recarregando partida...');
-                location.reload();
-            }
-        };
+      ctx.save();
+      ctx.translate(-cameraX, -cameraY);
 
-        function enviarMovimento(dRow, dCol) {
-            if (!meuId || !ws || ws.readyState !== WebSocket.OPEN) return;
-            ws.send(JSON.stringify({ type: 'move', dRow, dCol }));
-        }
+      ctx.fillStyle = '#0d171d';
+      ctx.fillRect(0, 0, totalWidth, totalHeight);
 
-        function atualizarRender() {
-            const size = estadoServidor.blockSize || 32;
-            Object.keys(estadoServidor.players).forEach(id => {
-                const servidor = estadoServidor.players[id];
-                const alvoX = servidor.col * size + size / 2;
-                const alvoY = servidor.row * size + size / 2;
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      ctx.lineWidth = 1;
+      for (let r = 0; r <= estadoServidor.mapRows; r++) {
+        ctx.beginPath();
+        ctx.moveTo(0, r * size);
+        ctx.lineTo(totalWidth, r * size);
+        ctx.stroke();
+      }
+      for (let c = 0; c <= estadoServidor.mapCols; c++) {
+        ctx.beginPath();
+        ctx.moveTo(c * size, 0);
+        ctx.lineTo(c * size, totalHeight);
+        ctx.stroke();
+      }
 
-                if (!renderPlayers[id]) {
-                    renderPlayers[id] = { x: alvoX, y: alvoY, color: servidor.color, alive: servidor.alive, score: servidor.score || 0 };
-                } else {
-                    const atual = renderPlayers[id];
-                    atual.x += (alvoX - atual.x) * 0.35;
-                    atual.y += (alvoY - atual.y) * 0.35;
-                    atual.color = servidor.color;
-                    atual.alive = servidor.alive;
-                    atual.score = servidor.score || 0;
-                }
-            });
+      Object.keys(estadoServidor.grid).forEach((key) => {
+        const [row, col] = key.split(',').map(Number);
+        const cell = estadoServidor.grid[key];
+        if (!cell) return;
 
-            Object.keys(renderPlayers).forEach(id => {
-                if (!estadoServidor.players[id]) delete renderPlayers[id];
-            });
+        ctx.fillStyle = cell.color;
+        const alpha = cell.type === 'base' ? '55' : 'bb';
+        ctx.fillStyle = `${cell.color}${alpha}`;
+        ctx.fillRect(col * size, row * size, size, size);
+      });
 
-            particulas.forEach((particula, indice) => {
-                particula.x += particula.vx;
-                particula.y += particula.vy;
-                particula.alpha -= particula.vida;
-                if (particula.alpha <= 0) {
-                    particulas.splice(indice, 1);
-                }
-            });
-        }
+      ctx.strokeStyle = '#ff496d';
+      ctx.lineWidth = 5;
+      ctx.strokeRect(0, 0, totalWidth, totalHeight);
 
-        function desenharMapa() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            const size = estadoServidor.blockSize || 32;
-            const totalWidth = estadoServidor.mapCols * size;
-            const totalHeight = estadoServidor.mapRows * size;
+      Object.values(renderPlayers).forEach((player) => {
+        if (!player || !player.alive) return;
+        const x = player.x - 16;
+        const y = player.y - 16;
+        ctx.fillStyle = player.color;
+        ctx.fillRect(x, y, 32, 32);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x - 2, y - 2, 36, 36);
+      });
 
-            const jogadorAtual = renderPlayers[meuId];
-            let cameraX = (estadoServidor.mapCols * size) / 2 - canvas.width / 2;
-            let cameraY = (estadoServidor.mapRows * size) / 2 - canvas.height / 2;
+      particulas.forEach((p) => {
+        ctx.save();
+        ctx.globalAlpha = p.alpha;
+        ctx.fillStyle = p.cor;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.raio, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
 
-            if (jogadorAtual) {
-                cameraX = jogadorAtual.x - canvas.width / 2;
-                cameraY = jogadorAtual.y - canvas.height / 2;
-            }
+      ctx.restore();
+    }
 
-            ctx.save();
-            ctx.translate(-cameraX, -cameraY);
+    function atualizarDirecaoMouse() {
+      if (!meuId || !pointerTarget) return;
+      const jogador = renderPlayers[meuId];
+      if (!jogador) return;
 
-            ctx.fillStyle = '#0f1720';
-            ctx.fillRect(0, 0, totalWidth, totalHeight);
+      const dx = pointerTarget.x - (jogador.x - (canvas.width / 2) + canvas.width / 2);
+      const dy = pointerTarget.y - (jogador.y - (canvas.height / 2) + canvas.height / 2);
+      enviarDirecao(dx, dy);
+    }
 
-            ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-            ctx.lineWidth = 1;
-            for (let r = 0; r <= estadoServidor.mapRows; r++) {
-                ctx.beginPath();
-                ctx.moveTo(0, r * size);
-                ctx.lineTo(totalWidth, r * size);
-                ctx.stroke();
-            }
-            for (let c = 0; c <= estadoServidor.mapCols; c++) {
-                ctx.beginPath();
-                ctx.moveTo(c * size, 0);
-                ctx.lineTo(c * size, totalHeight);
-                ctx.stroke();
-            }
+    function gameLoop() {
+      atualizarDirecaoMouse();
+      atualizarRender();
+      desenharMapa();
+      requestAnimationFrame(gameLoop);
+    }
 
-            Object.keys(estadoServidor.grid).forEach(chave => {
-                const [linha, coluna] = chave.split(',').map(Number);
-                const celula = estadoServidor.grid[chave];
-                if (!celula) return;
+    const local = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const wsUrl = local ? 'ws://localhost:8080' : window.location.origin.replace(/^http/, 'ws');
+    const ws = new WebSocket(wsUrl);
+    window.__ws = ws;
 
-                if (celula.tipo === 'base') {
-                    ctx.fillStyle = celula.cor + '55';
-                    ctx.fillRect(coluna * size, linha * size, size, size);
-                }
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
 
-                if (celula.tipo === 'rastro') {
-                    ctx.fillStyle = celula.cor + 'bb';
-                    ctx.fillRect(coluna * size + 5, linha * size + 5, size - 10, size - 10);
-                }
-            });
+      if (data.type === 'init') {
+        meuId = data.id;
+        document.getElementById('meuId').textContent = meuId;
+        document.getElementById('saldo').textContent = `R$ ${(Number(data.balance || 0)).toFixed(2)}`;
+      }
 
-            ctx.strokeStyle = '#ff4d6d';
-            ctx.lineWidth = 5;
-            ctx.strokeRect(0, 0, totalWidth, totalHeight);
-
-            Object.values(renderPlayers).forEach(player => {
-                if (!player || !player.alive) return;
-
-                const x = player.x - 16;
-                const y = player.y - 16;
-                ctx.fillStyle = player.color;
-                ctx.fillRect(x, y, 32, 32);
-
-                if (player.x && player.y && player.color) {
-                    ctx.strokeStyle = '#ffffff';
-                    ctx.lineWidth = 2;
-                    ctx.strokeRect(x - 2, y - 2, 36, 36);
-                }
-            });
-
-            particulas.forEach(particula => {
-                ctx.save();
-                ctx.globalAlpha = particula.alpha;
-                ctx.fillStyle = particula.cor;
-                ctx.beginPath();
-                ctx.arc(particula.x, particula.y, particula.raio, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.restore();
-            });
-
-            ctx.restore();
-        }
-
-        function gameLoop() {
-            atualizarRender();
-            desenharMapa();
-            requestAnimationFrame(gameLoop);
-        }
-
-        function processarDirecaoPorPonto(x, y) {
-            if (!meuId) return;
-            const jogador = renderPlayers[meuId];
-            if (!jogador) return;
-
-            const dx = x - jogador.x;
-            const dy = y - jogador.y;
-
-            if (Math.abs(dx) > Math.abs(dy)) {
-                enviarMovimento(0, dx > 0 ? 1 : -1);
-            } else {
-                enviarMovimento(dy > 0 ? 1 : -1, 0);
-            }
-        }
-
-        window.addEventListener('keydown', (e) => {
-            let dRow = 0;
-            let dCol = 0;
-
-            if (e.key === 'ArrowUp' || e.key.toLowerCase() === 'w') dRow = -1;
-            if (e.key === 'ArrowDown' || e.key.toLowerCase() === 's') dRow = 1;
-            if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') dCol = -1;
-            if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') dCol = 1;
-
-            if (dRow !== 0 || dCol !== 0) {
-                enviarMovimento(dRow, dCol);
-            }
+      if (data.type === 'update') {
+        const anterior = estadoServidor.players;
+        Object.keys(anterior).forEach((id) => {
+          const antigo = anterior[id];
+          const novo = data.gameState.players[id];
+          if (antigo && antigo.alive && novo && !novo.alive) {
+            criarParticulas((antigo.x * (estadoServidor.blockSize || 22)) + 12, (antigo.y * (estadoServidor.blockSize || 22)) + 12, antigo.color);
+          }
         });
 
-        window.addEventListener('pointerdown', (e) => {
-            pontoInicialToque = { x: e.clientX, y: e.clientY };
-            processarDirecaoPorPonto(e.clientX, e.clientY);
-        }, { passive: true });
+        estadoServidor = data.gameState;
+        atualizarHud();
+      }
 
-        window.addEventListener('touchstart', (e) => {
-            if (!e.touches || !e.touches[0]) return;
-            const toque = e.touches[0];
-            pontoInicialToque = { x: toque.clientX, y: toque.clientY };
-            processarDirecaoPorPonto(toque.clientX, toque.clientY);
-        }, { passive: true });
+      if (data.type === 'gameOver' && data.id === meuId) {
+        alert('💥 Você morreu! Recarregando partida...');
+        location.reload();
+      }
+    };
 
-        window.addEventListener('touchmove', (e) => {
-            if (!e.touches || !e.touches[0]) return;
-            const toque = e.touches[0];
-            const dx = toque.clientX - (pontoInicialToque?.x || toque.clientX);
-            const dy = toque.clientY - (pontoInicialToque?.y || toque.clientY);
-            if (Math.abs(dx) > 25 || Math.abs(dy) > 25) {
-                processarDirecaoPorPonto(toque.clientX, toque.clientY);
-                pontoInicialToque = { x: toque.clientX, y: toque.clientY };
-            }
-        }, { passive: true });
+    window.addEventListener('keydown', (event) => {
+      let dx = 0;
+      let dy = 0;
 
-        window.addEventListener('resize', redimensionarCanvas);
-        redimensionarCanvas();
-        requestAnimationFrame(gameLoop);
-    </script>
+      if (event.key === 'ArrowUp' || event.key.toLowerCase() === 'w') dy = -1;
+      if (event.key === 'ArrowDown' || event.key.toLowerCase() === 's') dy = 1;
+      if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') dx = -1;
+      if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd') dx = 1;
+
+      if (dx || dy) enviarDirecao(dx, dy);
+    });
+
+    window.addEventListener('pointermove', (event) => {
+      pointerTarget = { x: event.clientX, y: event.clientY };
+    }, { passive: true });
+
+    window.addEventListener('touchmove', (event) => {
+      if (!event.touches || !event.touches[0]) return;
+      const touch = event.touches[0];
+      pointerTarget = { x: touch.clientX, y: touch.clientY };
+    }, { passive: true });
+
+    window.addEventListener('resize', redimensionarCanvas);
+    redimensionarCanvas();
+    requestAnimationFrame(gameLoop);
+  </script>
 </body>
 </html>
