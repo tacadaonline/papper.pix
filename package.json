@@ -1,6 +1,7 @@
 {
-  "name": "cercado",
+  "name": "cercado-game",
   "version": "1.0.0",
+  "description": "Jogo Cercado",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
