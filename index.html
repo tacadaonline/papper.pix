@@ -6,12 +6,12 @@
   <title>Paper.io Clone</title>
   <style>
     :root {
-      --bg: #0a1017;
-      --panel: rgba(10, 16, 23, 0.82);
+      --bg: #090e14;
+      --panel: rgba(11, 17, 24, 0.9);
       --line: rgba(255,255,255,0.08);
-      --accent: #19f0c5;
+      --accent: #23f0c3;
       --gold: #ffca28;
-      --danger: #ff496d;
+      --danger: #ff4d6d;
     }
 
     * { box-sizing: border-box; }
@@ -49,7 +49,7 @@
     .accent { color: var(--accent); }
     .gold { color: var(--gold); }
 
-    #gameCanvas {
+    canvas {
       display: block;
       width: 100vw;
       height: 100vh;
@@ -84,7 +84,7 @@
 
     let renderPlayers = {};
     let particulas = [];
-    let pointerTarget = null;
+    let pointer = null;
 
     function redimensionarCanvas() {
       canvas.width = window.innerWidth;
@@ -92,12 +92,12 @@
     }
 
     function criarParticulas(x, y, cor) {
-      for (let i = 0; i < 26; i++) {
+      for (let i = 0; i < 28; i++) {
         particulas.push({
           x,
           y,
-          vx: (Math.random() - 0.5) * 5.5,
-          vy: (Math.random() - 0.5) * 5.5,
+          vx: (Math.random() - 0.5) * 5.8,
+          vy: (Math.random() - 0.5) * 5.8,
           raio: Math.random() * 3 + 2,
           cor,
           alpha: 1,
@@ -107,22 +107,22 @@
     }
 
     function atualizarHud() {
-      const jogador = estadoServidor.players[meuId];
-      if (jogador) {
-        document.getElementById('score').textContent = String(jogador.score || 0);
-        document.getElementById('saldo').textContent = `R$ ${(Number(jogador.balance || 0)).toFixed(2)}`;
+      const player = estadoServidor.players[meuId];
+      if (player) {
+        document.getElementById('score').textContent = String(player.score || 0);
+        document.getElementById('saldo').textContent = `R$ ${(Number(player.balance || 0)).toFixed(2)}`;
       }
       document.getElementById('pote').textContent = `R$ ${(Number(estadoServidor.pot || 0)).toFixed(2)}`;
     }
 
     function enviarDirecao(dx, dy) {
       if (!meuId) return;
-      const length = Math.hypot(dx, dy);
-      if (!length) return;
       const ws = window.__ws;
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'move', dx: dx / length, dy: dy / length }));
-      }
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+      const length = Math.hypot(dx, dy);
+      if (length === 0) return;
+      ws.send(JSON.stringify({ type: 'move', dx: dx / length, dy: dy / length }));
     }
 
     function atualizarRender() {
@@ -152,11 +152,11 @@
         if (!estadoServidor.players[id]) delete renderPlayers[id];
       });
 
-      particulas.forEach((p, index) => {
-        p.x += p.vx;
-        p.y += p.vy;
-        p.alpha -= p.vida;
-        if (p.alpha <= 0) particulas.splice(index, 1);
+      particulas.forEach((particula, index) => {
+        particula.x += particula.vx;
+        particula.y += particula.vy;
+        particula.alpha -= particula.vida;
+        if (particula.alpha <= 0) particulas.splice(index, 1);
       });
     }
 
@@ -167,19 +167,19 @@
       const totalWidth = estadoServidor.mapCols * size;
       const totalHeight = estadoServidor.mapRows * size;
 
-      const jogadorAtual = renderPlayers[meuId];
+      const playerAtual = renderPlayers[meuId];
       let cameraX = totalWidth / 2 - canvas.width / 2;
       let cameraY = totalHeight / 2 - canvas.height / 2;
 
-      if (jogadorAtual) {
-        cameraX = jogadorAtual.x - canvas.width / 2;
-        cameraY = jogadorAtual.y - canvas.height / 2;
+      if (playerAtual) {
+        cameraX = playerAtual.x - canvas.width / 2;
+        cameraY = playerAtual.y - canvas.height / 2;
       }
 
       ctx.save();
       ctx.translate(-cameraX, -cameraY);
 
-      ctx.fillStyle = '#0d171d';
+      ctx.fillStyle = '#0f171d';
       ctx.fillRect(0, 0, totalWidth, totalHeight);
 
       ctx.strokeStyle = 'rgba(255,255,255,0.06)';
@@ -201,14 +201,11 @@
         const [row, col] = key.split(',').map(Number);
         const cell = estadoServidor.grid[key];
         if (!cell) return;
-
-        ctx.fillStyle = cell.color;
-        const alpha = cell.type === 'base' ? '55' : 'bb';
-        ctx.fillStyle = `${cell.color}${alpha}`;
+        ctx.fillStyle = `${cell.color}${cell.type === 'base' ? '55' : 'bb'}`;
         ctx.fillRect(col * size, row * size, size, size);
       });
 
-      ctx.strokeStyle = '#ff496d';
+      ctx.strokeStyle = '#ff4d6d';
       ctx.lineWidth = 5;
       ctx.strokeRect(0, 0, totalWidth, totalHeight);
 
@@ -223,12 +220,12 @@
         ctx.strokeRect(x - 2, y - 2, 36, 36);
       });
 
-      particulas.forEach((p) => {
+      particulas.forEach((particula) => {
         ctx.save();
-        ctx.globalAlpha = p.alpha;
-        ctx.fillStyle = p.cor;
+        ctx.globalAlpha = particula.alpha;
+        ctx.fillStyle = particula.cor;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, p.raio, 0, Math.PI * 2);
+        ctx.arc(particula.x, particula.y, particula.raio, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
       });
@@ -236,18 +233,38 @@
       ctx.restore();
     }
 
-    function atualizarDirecaoMouse() {
-      if (!meuId || !pointerTarget) return;
-      const jogador = renderPlayers[meuId];
-      if (!jogador) return;
+    function atualizarInputMouse() {
+      if (!pointer || !meuId) return;
+      const player = renderPlayers[meuId];
+      if (!player) return;
 
-      const dx = pointerTarget.x - (jogador.x - (canvas.width / 2) + canvas.width / 2);
-      const dy = pointerTarget.y - (jogador.y - (canvas.height / 2) + canvas.height / 2);
-      enviarDirecao(dx, dy);
+      const dx = pointer.x - canvas.width / 2;
+      const dy = pointer.y - canvas.height / 2;
+      const worldX = player.x - cameraXForPlayer();
+      const worldY = player.y - cameraYForPlayer();
+
+      const targetX = worldX + dx;
+      const targetY = worldY + dy;
+
+      const moveX = targetX - player.x;
+      const moveY = targetY - player.y;
+      enviarDirecao(moveX, moveY);
+    }
+
+    function cameraXForPlayer() {
+      const player = renderPlayers[meuId];
+      if (!player) return 0;
+      return player.x - canvas.width / 2;
+    }
+
+    function cameraYForPlayer() {
+      const player = renderPlayers[meuId];
+      if (!player) return 0;
+      return player.y - canvas.height / 2;
     }
 
     function gameLoop() {
-      atualizarDirecaoMouse();
+      atualizarInputMouse();
       atualizarRender();
       desenharMapa();
       requestAnimationFrame(gameLoop);
@@ -273,7 +290,7 @@
           const antigo = anterior[id];
           const novo = data.gameState.players[id];
           if (antigo && antigo.alive && novo && !novo.alive) {
-            criarParticulas((antigo.x * (estadoServidor.blockSize || 22)) + 12, (antigo.y * (estadoServidor.blockSize || 22)) + 12, antigo.color);
+            criarParticulas((antigo.x * (estadoServidor.blockSize || 22)) + 14, (antigo.y * (estadoServidor.blockSize || 22)) + 14, antigo.color);
           }
         });
 
@@ -300,13 +317,13 @@
     });
 
     window.addEventListener('pointermove', (event) => {
-      pointerTarget = { x: event.clientX, y: event.clientY };
+      pointer = { x: event.clientX, y: event.clientY };
     }, { passive: true });
 
     window.addEventListener('touchmove', (event) => {
       if (!event.touches || !event.touches[0]) return;
       const touch = event.touches[0];
-      pointerTarget = { x: touch.clientX, y: touch.clientY };
+      pointer = { x: touch.clientX, y: touch.clientY };
     }, { passive: true });
 
     window.addEventListener('resize', redimensionarCanvas);
