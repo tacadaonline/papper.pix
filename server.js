@@ -290,6 +290,7 @@ function chooseBotDirection(bot) {
     if (nextX <= 0 || nextX >= gameState.mapCols || nextY <= 0 || nextY >= gameState.mapRows) {
       return;
     }
+  }
 
     let score = 0;
     const row = Math.floor(nextY);
