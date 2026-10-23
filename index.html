@@ -1,49 +1,766 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Paper Pix Premium</title>
-    <meta
-      name="description"
-      content="Versão premium do Paper.io em HTML5 Canvas com bots, bônus, território e controles mobile."
-    />
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body>
-    <div class="hud">
-      <div class="card">
-        <span>Pontos</span>
-        <strong id="score">0</strong>
-      </div>
-      <div class="card">
-        <span>Melhor</span>
-        <strong id="best">0</strong>
-      </div>
-      <div class="card status-card">
-        <span>Status</span>
-        <strong id="status">Pronto</strong>
-      </div>
-    </div>
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Cercado</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@500;600;700&family=Unbounded:wght@600;800&display=swap">
+<style>
+/* Layout: canvas de tela cheia com o mapa; HUD flutuante nos cantos; cartao central para menu e fim de jogo. */
+:root {
+  --board: #e7ebf3;
+  --grid: #d7ddea;
+  --wall: #2a3348;
+  --ink: #141a2a;
+  --muted: #596177;
+  --panel: rgba(255, 255, 255, 0.88);
+  --panel-line: rgba(20, 26, 42, 0.12);
+  --scrim: rgba(231, 235, 243, 0.55);
+  --halo: rgba(231, 235, 243, 0.92);
+  --field: #ffffff;
+  --accent: #2f6bff;
+  --accent-ink: #ffffff;
+  --display: 'Unbounded', 'Arial Black', system-ui, sans-serif;
+  --body: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --board: #1a2033;
+    --grid: #232b42;
+    --wall: #0b0e18;
+    --ink: #eef1f8;
+    --muted: #9aa4bd;
+    --panel: rgba(22, 27, 43, 0.84);
+    --panel-line: rgba(255, 255, 255, 0.1);
+    --scrim: rgba(8, 10, 18, 0.5);
+    --halo: rgba(26, 32, 51, 0.9);
+    --field: #10152a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --board: #1a2033;
+  --grid: #232b42;
+  --wall: #0b0e18;
+  --ink: #eef1f8;
+  --muted: #9aa4bd;
+  --panel: rgba(22, 27, 43, 0.84);
+  --panel-line: rgba(255, 255, 255, 0.1);
+  --scrim: rgba(8, 10, 18, 0.5);
+  --halo: rgba(26, 32, 51, 0.9);
+  --field: #10152a;
+  color-scheme: dark;
+}
 
-    <div class="game-shell">
-      <canvas id="gameCanvas" width="960" height="600"></canvas>
-    </div>
+html, body { height: 100%; }
+body {
+  box-sizing: border-box;
+  position: relative;
+  overflow: hidden;
+  background: var(--wall);
+  color: var(--ink);
+  font-family: var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0;
+  -webkit-user-select: none;
+  user-select: none;
+}
+#cv {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  z-index: 0;
+}
 
-    <div class="mobile-controls" aria-label="Controles móveis">
-      <button class="dir-btn" data-key="ArrowUp">▲</button>
-      <div class="row">
-        <button class="dir-btn" data-key="ArrowLeft">◀</button>
-        <button class="dir-btn" data-key="ArrowDown">▼</button>
-        <button class="dir-btn" data-key="ArrowRight">▶</button>
-      </div>
-    </div>
+.hud {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding-top: 12px;
+  pointer-events: none;
+}
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+  border-radius: 14px;
+  padding: 10px 14px;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  min-width: 0;
+}
+.label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.stat .big {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(22px, 6vw, 30px);
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+.stat .sub { font-size: 13px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.lb { width: min(190px, 46vw); }
+.lb ol { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
+.lb li { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; min-width: 0; }
+.lb li i { flex: none; width: 10px; height: 10px; border-radius: 3px; }
+.lb li .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb li b { font-weight: 700; font-variant-numeric: tabular-nums; }
+.lb li.me { color: var(--accent); }
 
-    <div class="controls-text">
-      <p>Use WASD, setas ou o teclado virtual.</p>
-      <p>Capture pellets, domine território e evite os rastros.</p>
-    </div>
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  background: var(--scrim);
+  padding-block: 16px;
+  overflow-y: auto;
+}
+.card {
+  box-sizing: border-box;
+  width: min(100%, 420px);
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+  border-radius: 22px;
+  padding: 24px;
+  display: grid;
+  gap: 14px;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  user-select: auto;
+  -webkit-user-select: auto;
+}
+.card h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(36px, 11vw, 48px);
+  line-height: 1;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+.card h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(26px, 8vw, 34px);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.card p { margin: 0; font-size: 15px; line-height: 1.45; color: var(--muted); max-width: 52ch; }
+.card p.lead { color: var(--ink); font-weight: 600; font-size: 16px; }
+.card .hint { font-size: 13px; }
+#demo { display: block; width: 100%; max-width: 230px; height: auto; }
+.field { display: grid; gap: 6px; }
+.field input {
+  box-sizing: border-box;
+  width: 100%;
+  font: 600 16px var(--body);
+  color: var(--ink);
+  background: var(--field);
+  border: 1px solid var(--panel-line);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.btn {
+  font: 700 16px var(--body);
+  border: 0;
+  border-radius: 12px;
+  padding: 14px 20px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  cursor: pointer;
+  width: 100%;
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+.btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--panel-line); }
+button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.stats div { background: var(--field); border: 1px solid var(--panel-line); border-radius: 12px; padding: 10px 12px; min-width: 0; }
+.stats b { display: block; font-family: var(--display); font-weight: 800; font-size: 18px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.badge { display: inline-block; font-size: 12px; font-weight: 700; color: var(--accent-ink); background: var(--accent); border-radius: 999px; padding: 3px 10px; justify-self: start; }
+@media (prefers-reduced-motion: reduce) { .btn { transition: none; } }
+</style>
 
-    <script src="game.js"></script>
-  </body>
-</html>
+<canvas id="cv" aria-label="Mapa do jogo"></canvas>
+
+<div class="hud" id="hud" hidden>
+  <div class="panel stat">
+    <div class="label">Território</div>
+    <div class="big" id="pct">0,1%</div>
+    <div class="sub"><span id="kills">0</span> abates</div>
+  </div>
+  <div class="panel lb">
+    <div class="label">Ranking</div>
+    <ol id="lb"></ol>
+  </div>
+</div>
+
+<div class="overlay" id="menu">
+  <div class="card">
+    <h1>Cercado</h1>
+    <p class="lead">Saia da sua base, feche um laço e conquiste o mapa. Corte o rastro dos rivais antes que cortem o seu.</p>
+    <svg id="demo" viewBox="0 0 198 110" role="img" aria-label="Exemplo: um laço fechado a partir da base conquista a área dentro dele"></svg>
+    <p class="hint">Tudo que ficar dentro do laço vira seu. Se alguém tocar no seu rastro enquanto você está fora, você perde.</p>
+    <div class="field">
+      <label class="label" for="nick">Apelido</label>
+      <input id="nick" type="text" maxlength="12" placeholder="Seu apelido" autocomplete="off">
+    </div>
+    <button class="btn" id="play" type="button">Jogar</button>
+    <p class="hint">Setas ou WASD. No celular, deslize o dedo na tela. <span id="bestLine"></span></p>
+  </div>
+</div>
+
+<div class="overlay" id="over" hidden>
+  <div class="card">
+    <h2>Você caiu</h2>
+    <p id="reason"></p>
+    <span class="badge" id="newBest" hidden>Novo recorde</span>
+    <div class="stats">
+      <div><span class="label">Máximo</span><b id="sMax">0%</b></div>
+      <div><span class="label">Abates</span><b id="sKills">0</b></div>
+      <div><span class="label">Tempo</span><b id="sTime">0:00</b></div>
+    </div>
+    <button class="btn" id="again" type="button">Jogar de novo</button>
+    <button class="btn ghost" id="toMenu" type="button">Trocar apelido</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var W = 90, H = 90, N = W * H, TICK = 105, BOTS = 8;
+  var COLORS = ['#2f6bff', '#ff5a4e', '#19b36b', '#f5a700', '#8e55ff', '#00a3b5', '#ff4fa3', '#86bd00', '#ff7a1a'];
+  var NAMES = ['Bia', 'Caio', 'Duda', 'Léo', 'Nina', 'Théo', 'Lia', 'Davi', 'Maju'];
+  var DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+
+  var owner = new Uint8Array(N);
+  var trail = new Uint8Array(N);
+  var cnt = new Int32Array(12);
+  var vis = new Uint8Array(N);
+  var stack = new Int32Array(N + 8);
+
+  function rgb(h) { var n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+  var SK = COLORS.map(function (h) {
+    var c = rgb(h), r = c[0], g = c[1], b = c[2];
+    return {
+      land: 'rgba(' + r + ',' + g + ',' + b + ',0.9)',
+      trail: 'rgba(' + r + ',' + g + ',' + b + ',0.42)',
+      edge: 'rgb(' + Math.round(r * 0.66) + ',' + Math.round(g * 0.66) + ',' + Math.round(b * 0.66) + ')'
+    };
+  });
+
+  var $ = function (id) { return document.getElementById(id); };
+  var cv = $('cv'), ctx = cv.getContext('2d');
+  var hud = $('hud'), menu = $('menu'), over = $('over');
+  var pctEl = $('pct'), killsEl = $('kills'), lbEl = $('lb');
+  var nick = $('nick');
+
+  var ents = [], state = 'menu', gt = 0, acc = 0, last = 0, ticks = 0, maxPct = 0;
+  var playerName = 'Você', best = 0, watch = null, watchUntil = 0, hudAcc = 0;
+  var cam = { x: W / 2, y: H / 2 };
+  var particles = [];
+  var cw = 300, ch = 300, dpr = 1, cell = 20, theme = {};
+  var ox = 0, oy = 0;
+  var overTimer = 0;
+
+  try { best = parseFloat(localStorage.getItem('cercado-best')) || 0; } catch (e) {}
+  try { var sn = localStorage.getItem('cercado-nick'); if (sn) nick.value = sn; } catch (e) {}
+
+  function fmt(n) { return n.toFixed(1).replace('.', ','); }
+  function inb(x, y) { return x >= 0 && y >= 0 && x < W && y < H; }
+
+  /* ---------- mundo ---------- */
+  function setOwner(i, id) {
+    var o = owner[i];
+    if (o === id) return;
+    if (o) cnt[o]--;
+    owner[i] = id;
+    if (id) cnt[id]++;
+  }
+
+  function newWorld(withPlayer) {
+    owner.fill(0); trail.fill(0); cnt.fill(0);
+    particles.length = 0; gt = 0; acc = 0; ticks = 0; maxPct = 0; watch = null;
+    ents = [];
+    for (var k = 0; k <= BOTS; k++) {
+      ents.push({
+        id: k + 1, name: NAMES[k], color: COLORS[k], human: withPlayer && k === 0,
+        alive: false, x: 0, y: 0, px: 0, py: 0, dx: 1, dy: 0, ndx: 1, ndy: 0,
+        trail: [], kills: 0, respawnAt: 0, mode: 'out', goal: -1, limit: 10, reason: '', queue: []
+      });
+    }
+    if (withPlayer) ents[0].name = playerName;
+    ents.forEach(spawn);
+    var t = camTarget(0);
+    cam.x = t.x; cam.y = t.y;
+  }
+
+  function spawn(e) {
+    var x = 0, y = 0, ok = false;
+    for (var t = 0; t < 250 && !ok; t++) {
+      x = 5 + Math.floor(Math.random() * (W - 10));
+      y = 5 + Math.floor(Math.random() * (H - 10));
+      ok = true;
+      for (var j = -4; j <= 4 && ok; j++) {
+        for (var i = -4; i <= 4; i++) {
+          var k = (y + j) * W + x + i;
+          if (owner[k] || trail[k]) { ok = false; break; }
+        }
+      }
+      if (ok) {
+        for (var n = 0; n < ents.length; n++) {
+          var o = ents[n];
+          if (o.alive && Math.abs(o.x - x) < 8 && Math.abs(o.y - y) < 8) { ok = false; break; }
+        }
+      }
+    }
+    for (var jj = -1; jj <= 1; jj++) for (var ii = -1; ii <= 1; ii++) setOwner((y + jj) * W + x + ii, e.id);
+    e.x = e.px = x; e.y = e.py = y;
+    var d = DIRS[(Math.random() * 4) | 0];
+    e.dx = e.ndx = d[0]; e.dy = e.ndy = d[1];
+    e.alive = true; e.trail = []; e.mode = 'out'; e.goal = -1; e.queue = []; e.reason = ''; e.kills = 0;
+  }
+
+  function burst(e) {
+    for (var k = 0; k < 26; k++) {
+      var a = Math.random() * 6.283, s = 2 + Math.random() * 7;
+      particles.push({ x: e.x + 0.5, y: e.y + 0.5, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 1, c: e.color });
+    }
+  }
+
+  function kill(e, reason) {
+    if (!e.alive) return;
+    e.alive = false; e.reason = reason;
+    for (var k = 0; k < e.trail.length; k++) { var i = e.trail[k]; if (trail[i] === e.id) trail[i] = 0; }
+    e.trail = [];
+    for (var j = 0; j < N; j++) if (owner[j] === e.id) owner[j] = 0;
+    cnt[e.id] = 0;
+    burst(e);
+    e.respawnAt = gt + 2600;
+    if (e.human) onPlayerDead();
+  }
+
+  function capture(e) {
+    var k, i;
+    for (k = 0; k < e.trail.length; k++) { i = e.trail[k]; setOwner(i, e.id); trail[i] = 0; }
+    e.trail = [];
+    vis.fill(0);
+    var sp = 0;
+    function push(c) { if (vis[c] || owner[c] === e.id) return; vis[c] = 1; stack[sp++] = c; }
+    for (var x = 0; x < W; x++) { push(x); push((H - 1) * W + x); }
+    for (var y = 0; y < H; y++) { push(y * W); push(y * W + W - 1); }
+    while (sp) {
+      var c = stack[--sp], cx = c % W, cy = (c / W) | 0;
+      if (cx > 0) push(c - 1);
+      if (cx < W - 1) push(c + 1);
+      if (cy > 0) push(c - W);
+      if (cy < H - 1) push(c + W);
+    }
+    for (i = 0; i < N; i++) if (!vis[i] && owner[i] !== e.id) setOwner(i, e.id);
+    for (k = 0; k < ents.length; k++) {
+      var o = ents[k];
+      if (o.alive && o !== e && cnt[o.id] === 0) kill(o, 'Seu território foi tomado');
+    }
+  }
+
+  /* ---------- passo da simulação ---------- */
+  function step() {
+    gt += TICK; ticks++;
+    var e, k, a, b;
+    for (k = 0; k < ents.length; k++) {
+      e = ents[k];
+      if (!e.alive) { if (!e.human && gt >= e.respawnAt) spawn(e); continue; }
+      if (e.human) {
+        var q = e.queue.shift();
+        if (q) { e.dx = q[0]; e.dy = q[1]; }
+      } else {
+        botThink(e); e.dx = e.ndx; e.dy = e.ndy;
+      }
+    }
+    var live = ents.filter(function (x) { return x.alive; });
+    for (k = 0; k < live.length; k++) { e = live[k]; e.px = e.x; e.py = e.y; e.x += e.dx; e.y += e.dy; }
+
+    var doom = new Map();
+    function mark(v, r) { if (!doom.has(v)) doom.set(v, r); }
+    for (k = 0; k < live.length; k++) {
+      e = live[k];
+      if (!inb(e.x, e.y)) { mark(e, 'Você saiu do mapa'); continue; }
+      var t = trail[e.y * W + e.x];
+      if (t) {
+        var v = ents[t - 1];
+        if (v === e) mark(e, 'Você bateu no próprio rastro');
+        else if (v.alive && !doom.has(v)) { mark(v, 'Seu rastro foi cortado por ' + e.name); e.kills++; }
+      }
+    }
+    for (a = 0; a < live.length; a++) {
+      for (b = a + 1; b < live.length; b++) {
+        var A = live[a], B = live[b];
+        if ((A.x === B.x && A.y === B.y) || (A.x === B.px && A.y === B.py && B.x === A.px && B.y === A.py)) {
+          mark(A, 'Colisão frontal com ' + B.name);
+          mark(B, 'Colisão frontal com ' + A.name);
+        }
+      }
+    }
+    doom.forEach(function (r, v) { kill(v, r); });
+
+    for (k = 0; k < live.length; k++) {
+      e = live[k];
+      if (!e.alive) continue;
+      var i = e.y * W + e.x;
+      if (owner[i] === e.id) { if (e.trail.length) capture(e); }
+      else if (!trail[i]) { trail[i] = e.id; e.trail.push(i); }
+    }
+  }
+
+  /* ---------- bots ---------- */
+  function safeMove(e, x, y, dx, dy) {
+    var nx = x + dx, ny = y + dy;
+    if (!inb(nx, ny)) return false;
+    return trail[ny * W + nx] !== e.id;
+  }
+  function nearestOwn(e) {
+    var bi = -1, bd = 1e9;
+    for (var i = 0; i < N; i++) {
+      if (owner[i] === e.id) {
+        var d = Math.abs((i % W) - e.x) + Math.abs(((i / W) | 0) - e.y);
+        if (d < bd) { bd = d; bi = i; }
+      }
+    }
+    return bi;
+  }
+  function pickGoal(e) {
+    var a = Math.random() * 6.283, d = 6 + Math.random() * 10;
+    var gx = Math.max(3, Math.min(W - 4, Math.round(e.x + Math.cos(a) * d)));
+    var gy = Math.max(3, Math.min(H - 4, Math.round(e.y + Math.sin(a) * d)));
+    return gy * W + gx;
+  }
+  function findPrey(e) {
+    var bi = -1, bd = 1e9;
+    for (var y = Math.max(0, e.y - 8); y <= Math.min(H - 1, e.y + 8); y++) {
+      for (var x = Math.max(0, e.x - 8); x <= Math.min(W - 1, e.x + 8); x++) {
+        var t = trail[y * W + x];
+        if (t && t !== e.id) {
+          var d = Math.abs(x - e.x) + Math.abs(y - e.y);
+          if (d < bd) { bd = d; bi = y * W + x; }
+        }
+      }
+    }
+    return bi;
+  }
+  function botThink(e) {
+    if (e.mode === 'home' && e.trail.length === 0) { e.mode = 'out'; e.goal = -1; }
+    if (e.mode === 'out') {
+      if (e.trail.length === 0 && e.goal < 0) e.limit = 6 + Math.floor(Math.random() * 20);
+      var gd = e.goal < 0 ? 0 : Math.abs((e.goal % W) - e.x) + Math.abs(((e.goal / W) | 0) - e.y);
+      if (e.goal < 0 || gd <= 1) e.goal = pickGoal(e);
+      if (e.trail.length > 0 && e.trail.length < e.limit - 2 && Math.random() < 0.06) {
+        var prey = findPrey(e);
+        if (prey >= 0) e.goal = prey;
+      }
+      if (e.trail.length > e.limit) { e.mode = 'home'; e.goal = nearestOwn(e); }
+    }
+    if (e.mode === 'home' && (e.goal < 0 || owner[e.goal] !== e.id)) e.goal = nearestOwn(e);
+    if (e.goal < 0) e.goal = pickGoal(e);
+
+    var gx = e.goal % W, gy = (e.goal / W) | 0;
+    var jit = e.mode === 'out' ? 1.3 : 0.3;
+    var bestD = null, bs = 1e9;
+    for (var k = 0; k < 4; k++) {
+      var d = DIRS[k];
+      if (d[0] === -e.dx && d[1] === -e.dy) continue;
+      if (!safeMove(e, e.x, e.y, d[0], d[1])) continue;
+      var nx = e.x + d[0], ny = e.y + d[1];
+      var s = Math.abs(nx - gx) + Math.abs(ny - gy);
+      var exits = 0;
+      for (var m = 0; m < 4; m++) {
+        var d2 = DIRS[m];
+        if (d2[0] === -d[0] && d2[1] === -d[1]) continue;
+        if (safeMove(e, nx, ny, d2[0], d2[1])) exits++;
+      }
+      if (exits === 0) s += 50;
+      if (e.mode === 'out' && (nx < 2 || ny < 2 || nx > W - 3 || ny > H - 3)) s += 4;
+      if (d[0] === e.dx && d[1] === e.dy) s -= 0.4;
+      s += Math.random() * jit;
+      if (s < bs) { bs = s; bestD = d; }
+    }
+    if (!bestD) bestD = [e.dx, e.dy];
+    e.ndx = bestD[0]; e.ndy = bestD[1];
+  }
+
+  /* ---------- jogador ---------- */
+  function input(d) {
+    var p = ents[0];
+    if (state !== 'play' || !p || !p.human || !p.alive) return;
+    var ref = p.queue.length ? p.queue[p.queue.length - 1] : [p.dx, p.dy];
+    if (d[0] === -ref[0] && d[1] === -ref[1]) return;
+    if (d[0] === ref[0] && d[1] === ref[1]) return;
+    if (p.queue.length < 2) p.queue.push(d);
+  }
+  var KEYMAP = {
+    ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
+    w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0]
+  };
+  addEventListener('keydown', function (ev) {
+    if (state === 'play') {
+      var key = ev.key.length === 1 ? ev.key.toLowerCase() : ev.key;
+      var d = KEYMAP[key];
+      if (d) { ev.preventDefault(); input(d); }
+    } else if (state === 'over' && !over.hidden && (ev.key === 'Enter' || ev.key === ' ')) {
+      ev.preventDefault(); startGame();
+    }
+  });
+  var sw = null;
+  cv.addEventListener('pointerdown', function (e) {
+    sw = { x: e.clientX, y: e.clientY };
+    try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  cv.addEventListener('pointermove', function (e) {
+    if (!sw || state !== 'play') return;
+    var dx = e.clientX - sw.x, dy = e.clientY - sw.y;
+    if (Math.hypot(dx, dy) < 16) return;
+    input(Math.abs(dx) > Math.abs(dy) ? [Math.sign(dx), 0] : [0, Math.sign(dy)]);
+    sw = { x: e.clientX, y: e.clientY };
+  });
+  function endSwipe() { sw = null; }
+  cv.addEventListener('pointerup', endSwipe);
+  cv.addEventListener('pointercancel', endSwipe);
+
+  /* ---------- fluxo do jogo ---------- */
+  function startGame() {
+    clearTimeout(overTimer);
+    playerName = (nick.value.trim() || 'Você').slice(0, 12);
+    try { localStorage.setItem('cercado-nick', playerName); } catch (e) {}
+    newWorld(true);
+    state = 'play';
+    menu.hidden = true; over.hidden = true; hud.hidden = false;
+    updateHud();
+  }
+  function showMenu() {
+    clearTimeout(overTimer);
+    newWorld(false);
+    state = 'menu';
+    over.hidden = true; hud.hidden = true; menu.hidden = false;
+    $('bestLine').textContent = best > 0 ? 'Seu recorde: ' + fmt(best) + '%.' : '';
+  }
+  function onPlayerDead() {
+    state = 'over';
+    var p = ents[0];
+    var isBest = maxPct > best;
+    if (isBest) { best = maxPct; try { localStorage.setItem('cercado-best', String(best)); } catch (e) {} }
+    $('reason').textContent = p.reason;
+    $('sMax').textContent = fmt(maxPct) + '%';
+    $('sKills').textContent = String(p.kills);
+    var secs = Math.floor((ticks * TICK) / 1000);
+    $('sTime').textContent = Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
+    $('newBest').hidden = !isBest;
+    clearTimeout(overTimer);
+    overTimer = setTimeout(function () { if (state === 'over') { over.hidden = false; $('again').focus(); } }, 900);
+  }
+
+  function updateHud() {
+    var p = ents[0];
+    if (p && p.human) {
+      var pct = cnt[1] / N * 100;
+      if (p.alive && pct > maxPct) maxPct = pct;
+      pctEl.textContent = fmt(p.alive ? pct : 0) + '%';
+      killsEl.textContent = String(p.kills);
+    }
+    var alive = ents.filter(function (e) { return e.alive; }).sort(function (a, b) { return cnt[b.id] - cnt[a.id]; });
+    var rows = alive.slice(0, 5);
+    var me = p && p.human ? p : null;
+    var meRank = -1;
+    if (me && me.alive && rows.indexOf(me) < 0) { meRank = alive.indexOf(me); rows.push(me); }
+    lbEl.textContent = '';
+    rows.forEach(function (e) {
+      var li = document.createElement('li');
+      if (e.human) li.className = 'me';
+      var sq = document.createElement('i'); sq.style.background = e.color;
+      var nm = document.createElement('span'); nm.className = 'nm';
+      nm.textContent = (e === me && meRank >= 0 ? (meRank + 1) + '. ' : '') + e.name;
+      var v = document.createElement('b'); v.textContent = fmt(cnt[e.id] / N * 100) + '%';
+      li.appendChild(sq); li.appendChild(nm); li.appendChild(v);
+      lbEl.appendChild(li);
+    });
+  }
+
+  /* ---------- câmera e desenho ---------- */
+  function camTarget(t) {
+    var p = ents[0], e = null;
+    if (state === 'play' && p && p.human && p.alive) e = p;
+    else {
+      if (!watch || !watch.alive || gt > watchUntil) {
+        var al = ents.filter(function (x) { return x.alive; }).sort(function (a, b) { return cnt[b.id] - cnt[a.id]; });
+        watch = al.length ? al[(Math.random() * Math.min(3, al.length)) | 0] : null;
+        watchUntil = gt + 9000;
+      }
+      e = watch;
+    }
+    if (!e) return { x: cam.x, y: cam.y };
+    return { x: e.px + (e.x - e.px) * t + 0.5, y: e.py + (e.y - e.py) * t + 0.5 };
+  }
+
+  function readTheme() {
+    var s = getComputedStyle(document.documentElement);
+    var g = function (n) { return s.getPropertyValue(n).trim(); };
+    theme = { board: g('--board'), grid: g('--grid'), wall: g('--wall'), ink: g('--ink'), halo: g('--halo') };
+  }
+  try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readTheme); } catch (e) {}
+  new MutationObserver(readTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  function resize() {
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    cw = cv.clientWidth || 300; ch = cv.clientHeight || 300;
+    cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr);
+    cell = Math.max(15, Math.min(28, Math.min(cw, ch) / 24));
+  }
+  addEventListener('resize', resize);
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(cv);
+
+  function rr(x, y, w, h, r) {
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h);
+  }
+
+  function drawHead(e, t) {
+    var cs = cell;
+    var ix = e.px + (e.x - e.px) * t, iy = e.py + (e.y - e.py) * t;
+    var sx = ox + ix * cs, sy = oy + iy * cs;
+    if (sx < -cs * 3 || sy < -cs * 3 || sx > cw + cs * 3 || sy > ch + cs * 3) return;
+    var s = cs * 0.9, m = (cs - s) / 2;
+    ctx.fillStyle = e.color;
+    rr(sx + m, sy + m, s, s, cs * 0.24); ctx.fill();
+    ctx.lineWidth = Math.max(2, cs * 0.09);
+    ctx.strokeStyle = e.human ? '#ffffff' : SK[e.id - 1].edge;
+    ctx.stroke();
+    var cx = sx + cs / 2, cy = sy + cs / 2, fx = e.dx, fy = e.dy, qx = -fy, qy = fx;
+    for (var sg = -1; sg <= 1; sg += 2) {
+      var ex = cx + fx * cs * 0.14 + qx * sg * cs * 0.2, ey = cy + fy * cs * 0.14 + qy * sg * cs * 0.2;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(ex, ey, cs * 0.15, 0, 6.283); ctx.fill();
+      ctx.fillStyle = '#141a2a';
+      ctx.beginPath(); ctx.arc(ex + fx * cs * 0.05, ey + fy * cs * 0.05, cs * 0.075, 0, 6.283); ctx.fill();
+    }
+    ctx.font = '700 ' + Math.max(11, Math.round(cs * 0.5)) + 'px Figtree, system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.lineJoin = 'round'; ctx.lineWidth = 4; ctx.strokeStyle = theme.halo;
+    ctx.strokeText(e.name, cx, sy - 4);
+    ctx.fillStyle = theme.ink;
+    ctx.fillText(e.name, cx, sy - 4);
+  }
+
+  function draw(t) {
+    var cs = cell;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ox = cw / 2 - cam.x * cs; oy = ch / 2 - cam.y * cs;
+    ctx.fillStyle = theme.wall; ctx.fillRect(0, 0, cw, ch);
+    ctx.fillStyle = theme.board; ctx.fillRect(ox, oy, W * cs, H * cs);
+
+    var x0 = Math.max(0, Math.floor(-ox / cs)), x1 = Math.min(W, Math.ceil((cw - ox) / cs));
+    var y0 = Math.max(0, Math.floor(-oy / cs)), y1 = Math.min(H, Math.ceil((ch - oy) / cs));
+    var x, y;
+
+    ctx.strokeStyle = theme.grid; ctx.lineWidth = 1; ctx.beginPath();
+    for (x = x0; x <= x1; x++) { var X = Math.round(ox + x * cs) + 0.5; ctx.moveTo(X, Math.max(0, oy)); ctx.lineTo(X, Math.min(ch, oy + H * cs)); }
+    for (y = y0; y <= y1; y++) { var Y = Math.round(oy + y * cs) + 0.5; ctx.moveTo(Math.max(0, ox), Y); ctx.lineTo(Math.min(cw, ox + W * cs), Y); }
+    ctx.stroke();
+
+    var edge = Math.max(2, Math.round(cs * 0.16));
+    for (y = y0; y < y1; y++) {
+      for (x = x0; x < x1; x++) {
+        var i = y * W + x, o = owner[i];
+        if (!o && !trail[i]) continue;
+        var px = Math.floor(ox + x * cs), py = Math.floor(oy + y * cs);
+        var pw = Math.floor(ox + (x + 1) * cs) - px, ph = Math.floor(oy + (y + 1) * cs) - py;
+        if (o) {
+          ctx.fillStyle = SK[o - 1].land; ctx.fillRect(px, py, pw, ph);
+          if (y === H - 1 || owner[i + W] !== o) { ctx.fillStyle = SK[o - 1].edge; ctx.fillRect(px, py + ph - edge, pw, edge); }
+        }
+        var tr = trail[i];
+        if (tr) { ctx.fillStyle = SK[tr - 1].trail; ctx.fillRect(px, py, pw, ph); }
+      }
+    }
+
+    ctx.strokeStyle = theme.wall; ctx.lineWidth = 8;
+    ctx.strokeRect(ox, oy, W * cs, H * cs);
+
+    var k;
+    for (k = 0; k < particles.length; k++) {
+      var p = particles[k];
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.fillStyle = p.c;
+      var ps = cs * 0.28;
+      ctx.fillRect(ox + p.x * cs - ps / 2, oy + p.y * cs - ps / 2, ps, ps);
+    }
+    ctx.globalAlpha = 1;
+
+    for (k = 0; k < ents.length; k++) if (ents[k].alive && !ents[k].human) drawHead(ents[k], t);
+    for (k = 0; k < ents.length; k++) if (ents[k].alive && ents[k].human) drawHead(ents[k], t);
+  }
+
+  function frame(ts) {
+    requestAnimationFrame(frame);
+    if (!last) last = ts;
+    var dt = Math.min(100, ts - last); last = ts;
+    if (document.hidden) return;
+    acc += dt;
+    while (acc >= TICK) { acc -= TICK; step(); }
+    for (var k = particles.length - 1; k >= 0; k--) {
+      var p = particles[k];
+      p.x += p.vx * dt / 1000; p.y += p.vy * dt / 1000; p.life -= dt / 700;
+      if (p.life <= 0) particles.splice(k, 1);
+    }
+    var t = acc / TICK, tg = camTarget(t), f = 1 - Math.exp(-dt / 90);
+    cam.x += (tg.x - cam.x) * f; cam.y += (tg.y - cam.y) * f;
+    draw(t);
+    hudAcc += dt;
+    if (hudAcc > 200) { hudAcc = 0; if (!hud.hidden) updateHud(); }
+  }
+  document.addEventListener('visibilitychange', function () { last = 0; });
+
+  /* ---------- menu ---------- */
+  (function buildDemo() {
+    var rows = ['.........', '.BBttt...', '.BBcct...', '.BBttt...', '.........'];
+    var c = 22, svg = $('demo'), out = '';
+    out += '<rect x="0" y="0" width="198" height="110" rx="10" fill="var(--board)"/>';
+    for (var y = 0; y < rows.length; y++) {
+      for (var x = 0; x < rows[y].length; x++) {
+        var ch2 = rows[y][x], fill = 'none', op = 1;
+        if (ch2 === 'B') { fill = COLORS[0]; op = 0.92; }
+        else if (ch2 === 't') { fill = COLORS[0]; op = 0.42; }
+        else if (ch2 === 'c') { fill = COLORS[0]; op = 0.2; }
+        out += '<rect x="' + (x * c) + '" y="' + (y * c) + '" width="' + c + '" height="' + c + '" fill="' + (fill === 'none' ? 'none' : fill) + '" fill-opacity="' + op + '" stroke="var(--grid)" stroke-width="1"/>';
+      }
+    }
+    out += '<rect x="' + (3 * c + 3) + '" y="' + (3 * c + 3) + '" width="' + (c - 6) + '" height="' + (c - 6) + '" rx="5" fill="' + COLORS[0] + '" stroke="#fff" stroke-width="2"/>';
+    svg.innerHTML = out;
+  })();
+
+  $('play').addEventListener('click', startGame);
+  $('again').addEventListener('click', startGame);
+  $('toMenu').addEventListener('click', showMenu);
+  nick.addEventListener('keydown', function (e) { if (e.key === 'Enter') startGame(); });
+
+  readTheme();
+  resize();
+  showMenu();
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</body></html>
