@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Paper Pix</title>
+    <title>Paper Pix Arena</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -18,15 +18,26 @@
       </div>
       <div class="card status-card">
         <span>Status</span>
-        <strong id="status">Em jogo</strong>
+        <strong id="status">Aguardando</strong>
       </div>
     </div>
 
-    <canvas id="gameCanvas" width="960" height="600"></canvas>
+    <div class="game-shell">
+      <canvas id="gameCanvas" width="960" height="600"></canvas>
+    </div>
 
-    <div class="controls">
-      <p>Use W A S D ou setas para mover.</p>
-      <p>Coma os pontos e evite os rastros.</p>
+    <div class="mobile-controls" aria-label="Controles móveis">
+      <button class="dir-btn" data-key="ArrowUp">▲</button>
+      <div class="row">
+        <button class="dir-btn" data-key="ArrowLeft">◀</button>
+        <button class="dir-btn" data-key="ArrowDown">▼</button>
+        <button class="dir-btn" data-key="ArrowRight">▶</button>
+      </div>
+    </div>
+
+    <div class="controls-text">
+      <p>Use W A S D, setas ou o teclado virtual.</p>
+      <p>Coma pellets, capture território e evite rastros.</p>
     </div>
 
     <script src="game.js"></script>
