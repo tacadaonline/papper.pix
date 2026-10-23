@@ -4,12 +4,11 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = process.env.PORT || 8080;
-const MAP_ROWS = 60;
-const MAP_COLS = 60;
-const BLOCK_SIZE = 22;
-const TICK_MS = 100;
-const PLAYER_SPEED = 0.9;
-const BOT_SPEED = 0.85;
+const MAP_ROWS = 80;
+const MAP_COLS = 80;
+const TICK_MS = 90;
+const PLAYER_SPEED = 0.95;
+const BOT_SPEED = 0.9;
 
 const server = http.createServer((req, res) => {
   fs.readFile(path.join(__dirname, 'index.html'), (err, content) => {
@@ -32,16 +31,11 @@ const gameState = {
   pot: 0,
   mapRows: MAP_ROWS,
   mapCols: MAP_COLS,
-  blockSize: BLOCK_SIZE,
-  tickRate: TICK_MS
+  blockSize: 20
 };
 
 const COLORS = ['#FF3366', '#33FF66', '#3366FF', '#FFFF33', '#FF33FF', '#00FFFF', '#FF9900'];
 const BOT_NAMES = ['BOT_Fox', 'BOT_Zero', 'BOT_Apex', 'BOT_Hawk', 'BOT_Viper'];
-const DIRECTIONS = [
-  [1, 0], [-1, 0], [0, 1], [0, -1],
-  [1, 1], [1, -1], [-1, 1], [-1, -1]
-];
 
 function keyFor(row, col) {
   return `${row},${col}`;
@@ -51,21 +45,9 @@ function inBounds(row, col) {
   return row >= 0 && row < gameState.mapRows && col >= 0 && col < gameState.mapCols;
 }
 
-function neighborsOf(row, col) {
-  const list = [];
-  for (let dr = -1; dr <= 1; dr++) {
-    for (let dc = -1; dc <= 1; dc++) {
-      if (dr === 0 && dc === 0) continue;
-      const r = row + dr;
-      const c = col + dc;
-      if (inBounds(r, c)) list.push([r, c]);
-    }
-  }
-  return list;
-}
-
-function setCell(row, col, type, ownerId, color) {
-  gameState.grid[keyFor(row, col)] = { type, ownerId, color };
+function setCell(row, col, kind, ownerId, color) {
+  const key = keyFor(row, col);
+  gameState.grid[key] = { kind, ownerId, color };
 }
 
 function clearOwnerCells(ownerId) {
@@ -75,22 +57,22 @@ function clearOwnerCells(ownerId) {
   });
 }
 
-function countOwnedCells(playerId) {
+function makeId() {
+  return '_' + Math.random().toString(36).slice(2, 10);
+}
+
+function countOwnedBaseCells(playerId) {
   let total = 0;
   Object.values(gameState.grid).forEach((cell) => {
-    if (cell.ownerId === playerId && cell.type === 'base') total += 1;
+    if (cell.ownerId === playerId && cell.kind === 'base') total += 1;
   });
   return total;
 }
 
-function updateScore(playerId) {
+function updatePlayerScore(playerId) {
   const player = gameState.players[playerId];
   if (!player) return;
-  player.score = countOwnedCells(playerId);
-}
-
-function makeId() {
-  return '_' + Math.random().toString(36).slice(2, 10);
+  player.score = countOwnedBaseCells(playerId);
 }
 
 function createInitialBase(playerId, color, x, y) {
@@ -116,32 +98,26 @@ function registerPlayer({ id, name, color, isBot, x, y }) {
     alive: true,
     x,
     y,
-    vx: 1,
+    vx: 0,
     vy: 0,
     speed: isBot ? BOT_SPEED : PLAYER_SPEED,
-    trail: [],
-    lastTrailKey: null,
     score: 0,
     balance: 50,
-    lastDecision: Date.now()
+    trail: [],
+    lastCellKey: null,
+    lastDecisionAt: 0
   };
 
   gameState.players[id] = player;
   createInitialBase(id, color, x, y);
-  updateScore(id);
+  updatePlayerScore(id);
   return player;
-}
-
-function createBot(name, color) {
-  const x = 20 + Math.random() * (gameState.mapCols - 40);
-  const y = 20 + Math.random() * (gameState.mapRows - 40);
-  registerPlayer({ id: name, name, color, isBot: true, x, y });
 }
 
 function createSocketPlayer(ws) {
   const id = makeId();
-  const x = 12 + Math.random() * (gameState.mapCols - 24);
-  const y = 12 + Math.random() * (gameState.mapRows - 24);
+  const x = 15 + Math.random() * 20;
+  const y = 15 + Math.random() * 20;
   const player = registerPlayer({
     id,
     name: `Player_${id.slice(-4)}`,
@@ -156,6 +132,51 @@ function createSocketPlayer(ws) {
   ws.send(JSON.stringify({ type: 'init', id: player.id, balance: player.balance }));
 }
 
+function createBot(name, color) {
+  const x = 20 + Math.random() * (gameState.mapCols - 40);
+  const y = 20 + Math.random() * (gameState.mapRows - 40);
+  registerPlayer({ id: name, name, color, isBot: true, x, y });
+}
+
+function distToSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lengthSq = dx * dx + dy * dy;
+  if (lengthSq === 0) return Math.hypot(px - x1, py - y1);
+
+  const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lengthSq));
+  const projX = x1 + t * dx;
+  const projY = y1 + t * dy;
+  return Math.hypot(px - projX, py - projY);
+}
+
+function segmentHitsTrail(player, trailPoints, headX, headY) {
+  for (let i = 1; i < trailPoints.length; i++) {
+    const prev = trailPoints[i - 1];
+    const next = trailPoints[i];
+    const dist = distToSegment(headX, headY, prev.x, prev.y, next.x, next.y);
+    if (dist < 0.9) return true;
+  }
+  return false;
+}
+
+function trailIntersectsOwn(player, headX, headY) {
+  if (player.trail.length < 4) return false;
+  const trail = player.trail;
+  return segmentHitsTrail(player, trail, headX, headY);
+}
+
+function trailIntersectsEnemy(player, headX, headY) {
+  for (const other of Object.values(gameState.players)) {
+    if (!other || other.id === player.id || !other.alive) continue;
+    if (other.trail.length < 4) continue;
+    if (segmentHitsTrail(player, other.trail, headX, headY)) {
+      return other.id;
+    }
+  }
+  return null;
+}
+
 function killPlayer(playerId, killerId = null) {
   const player = gameState.players[playerId];
   if (!player || !player.alive) return;
@@ -163,105 +184,115 @@ function killPlayer(playerId, killerId = null) {
   player.alive = false;
   player.vx = 0;
   player.vy = 0;
-  player.trail = [];
+
   clearOwnerCells(playerId);
+  player.trail = [];
 
   if (killerId && gameState.players[killerId]) {
     const killer = gameState.players[killerId];
-    killer.score = (killer.score || 0) + 12;
-    killer.balance = Number((killer.balance + 8).toFixed(2));
+    killer.score = (killer.score || 0) + 10;
+    killer.balance = Number((killer.balance + 6).toFixed(2));
   }
 
   gameState.pot += player.isBot ? 2.5 : 4;
 }
 
-function canConvertTrail(player) {
-  const recent = player.trail.slice(-20);
-  if (recent.length < 6) return false;
-
-  let touch = 0;
-
-  recent.forEach((key) => {
-    const [row, col] = key.split(',').map(Number);
-    const nearby = neighborsOf(row, col);
-    nearby.forEach(([r, c]) => {
-      const cell = gameState.grid[keyFor(r, c)];
-      if (cell && cell.ownerId === player.id && cell.type === 'base') touch += 1;
-    });
-  });
-
-  return touch >= Math.max(4, Math.ceil(recent.length * 0.35));
-}
-
 function convertTrailToBase(player) {
-  const recent = player.trail.slice(-28);
+  const recent = player.trail.slice(-30);
   if (!recent.length) return;
 
-  recent.forEach((key) => {
-    const [row, col] = key.split(',').map(Number);
-    const cell = gameState.grid[keyFor(row, col)];
-    if (cell && cell.ownerId === player.id && cell.type === 'trail') {
-      cell.type = 'base';
+  recent.forEach((point) => {
+    const row = Math.floor(point.y);
+    const col = Math.floor(point.x);
+    if (!inBounds(row, col)) return;
+    const key = keyFor(row, col);
+    const cell = gameState.grid[key];
+    if (cell && cell.ownerId === player.id && cell.kind === 'trail') {
+      cell.kind = 'base';
       cell.color = player.color;
     }
   });
 
-  updateScore(player.id);
+  updatePlayerScore(player.id);
 }
 
-function evaluateDirection(bot, [dx, dy]) {
-  const nextX = bot.x + dx * bot.speed;
-  const nextY = bot.y + dy * bot.speed;
+function canSolidifyTrail(player) {
+  if (player.trail.length < 14) return false;
 
-  if (nextX <= 0 || nextX >= gameState.mapCols || nextY <= 0 || nextY >= gameState.mapRows) {
-    return -999;
-  }
+  const recent = player.trail.slice(-22);
+  let touchingBase = 0;
 
-  const row = Math.floor(nextY);
-  const col = Math.floor(nextX);
-  const key = keyFor(row, col);
-  const cell = gameState.grid[key];
-
-  let score = 0;
-
-  if (cell) {
-    if (cell.ownerId === bot.id) {
-      score -= 85;
-      if (cell.type === 'base') score -= 15;
-      if (cell.type === 'trail') score -= 40;
-    } else {
-      score -= 80;
-      if (cell.type === 'base') score -= 25;
-      if (cell.type === 'trail') score -= 35;
-    }
-  }
-
-  const centralBias = Math.abs(row - gameState.mapRows / 2) + Math.abs(col - gameState.mapCols / 2);
-  score += 20 - centralBias * 0.14;
-
-  const borderPenalty = Math.min(nextX, nextY, gameState.mapCols - nextX, gameState.mapRows - nextY);
-  if (borderPenalty < 3) score -= 30;
-
-  Object.values(gameState.players).forEach((enemy) => {
-    if (!enemy.alive || enemy.id === bot.id) return;
-    const dist = Math.abs(enemy.x - nextX) + Math.abs(enemy.y - nextY);
-    if (dist < 5) {
-      score += 18;
-    }
-    if (dist < 2.2) {
-      score += 35;
+  recent.forEach((point) => {
+    const row = Math.floor(point.y);
+    const col = Math.floor(point.x);
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        const r = row + dr;
+        const c = col + dc;
+        if (!inBounds(r, c)) continue;
+        const cell = gameState.grid[keyFor(r, c)];
+        if (cell && cell.ownerId === player.id && cell.kind === 'base') touchingBase += 1;
+      }
     }
   });
 
-  return score;
+  return touchingBase >= Math.max(6, Math.ceil(recent.length * 0.3));
+}
+
+function setTrailCell(player, x, y) {
+  const row = Math.floor(y);
+  const col = Math.floor(x);
+
+  if (!inBounds(row, col)) return;
+
+  const key = keyFor(row, col);
+  const existing = gameState.grid[key];
+  if (!existing || existing.ownerId !== player.id) {
+    setCell(row, col, 'trail', player.id, player.color);
+  }
 }
 
 function chooseBotDirection(bot) {
-  let best = { dx: bot.vx || 1, dy: bot.vy || 0 };
+  const candidates = [
+    [1,0], [-1,0], [0,1], [0,-1],
+    [1,1], [1,-1], [-1,1], [-1,-1]
+  ];
+
+  let best = { dx: 1, dy: 0 };
   let bestScore = -Infinity;
 
-  DIRECTIONS.forEach(([dx, dy]) => {
-    const score = evaluateDirection(bot, [dx, dy]);
+  candidates.forEach(([dx, dy]) => {
+    const nextX = bot.x + dx * bot.speed;
+    const nextY = bot.y + dy * bot.speed;
+
+    if (nextX <= 0 || nextX >= gameState.mapCols || nextY <= 0 || nextY >= gameState.mapRows) {
+      return;
+    }
+
+    let score = 0;
+    const row = Math.floor(nextY);
+    const col = Math.floor(nextX);
+    const key = keyFor(row, col);
+    const cell = gameState.grid[key];
+
+    if (cell) {
+      if (cell.ownerId === bot.id) {
+        score -= 70;
+      } else {
+        score -= 90;
+      }
+    }
+
+    Object.values(gameState.players).forEach((other) => {
+      if (!other || other.id === bot.id || !other.alive) return;
+      const dist = Math.hypot(other.x - nextX, other.y - nextY);
+      if (dist < 5) score += 22;
+      if (dist < 2.5) score += 30;
+    });
+
+    const centerBias = Math.abs(row - gameState.mapRows / 2) + Math.abs(col - gameState.mapCols / 2);
+    score += 18 - centerBias * 0.12;
+
     if (score > bestScore) {
       bestScore = score;
       best = { dx, dy };
@@ -275,53 +306,56 @@ function stepPlayer(player) {
   if (!player.alive) return;
 
   if (player.isBot) {
-    const chosen = chooseBotDirection(player);
-    player.vx = chosen.dx;
-    player.vy = chosen.dy;
+    const direction = chooseBotDirection(player);
+    player.vx = direction.dx;
+    player.vy = direction.dy;
   }
 
-  const moveX = player.x + player.vx * player.speed;
-  const moveY = player.y + player.vy * player.speed;
+  if (Math.hypot(player.vx, player.vy) === 0) return;
 
-  if (moveX <= 0 || moveX >= gameState.mapCols || moveY <= 0 || moveY >= gameState.mapRows) {
+  const nextX = player.x + player.vx * player.speed;
+  const nextY = player.y + player.vy * player.speed;
+
+  if (nextX <= 0 || nextX >= gameState.mapCols || nextY <= 0 || nextY >= gameState.mapRows) {
     killPlayer(player.id);
     return;
   }
 
-  const nextRow = Math.floor(moveY);
-  const nextCol = Math.floor(moveX);
-  const nextKey = keyFor(nextRow, nextCol);
-  const cell = gameState.grid[nextKey];
+  const headKey = keyFor(Math.floor(nextY), Math.floor(nextX));
+  const cellAtHead = gameState.grid[headKey];
 
-  if (cell && cell.ownerId !== player.id) {
-    killPlayer(player.id, cell.ownerId || null);
+  if (cellAtHead && cellAtHead.ownerId !== player.id) {
+    killPlayer(player.id, cellAtHead.ownerId || null);
     return;
   }
 
-  if (player.lastTrailKey && player.trail.includes(nextKey) && nextKey !== player.lastTrailKey) {
+  const headHitsOwnTrail = trailIntersectsOwn(player, nextX, nextY);
+  if (headHitsOwnTrail) {
     killPlayer(player.id);
     return;
   }
 
-  player.x = moveX;
-  player.y = moveY;
-  player.trail.push(nextKey);
-  player.lastTrailKey = nextKey;
+  const killerId = trailIntersectsEnemy(player, nextX, nextY);
+  if (killerId) {
+    killPlayer(player.id, killerId);
+    return;
+  }
 
-  if (player.trail.length > 900) {
+  player.x = nextX;
+  player.y = nextY;
+  player.trail.push({ x: player.x, y: player.y });
+
+  if (player.trail.length > 1500) {
     player.trail.shift();
   }
 
-  const headCell = gameState.grid[nextKey];
-  if (!headCell || headCell.ownerId !== player.id) {
-    setCell(nextRow, nextCol, 'trail', player.id, player.color);
-  }
+  setTrailCell(player, player.x, player.y);
 
-  if (canConvertTrail(player)) {
+  if (canSolidifyTrail(player)) {
     convertTrailToBase(player);
   }
 
-  updateScore(player.id);
+  updatePlayerScore(player.id);
 }
 
 function broadcast() {
@@ -390,7 +424,7 @@ setInterval(() => {
 }, TICK_MS);
 
 server.listen(PORT, () => {
-  console.log(`🚀 Motor do Paper.io ativo em http://localhost:${PORT}`);
+  console.log(`🚀 Papelio em evolução em http://localhost:${PORT}`);
 });
 
 module.exports = { gameState, killPlayer, stepPlayer, convertTrailToBase };
