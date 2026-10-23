@@ -1,25 +1,26 @@
 :root {
-  --bg1: #07191a;
-  --bg2: #0f2c2c;
-  --panel: rgba(11, 20, 22, 0.78);
-  --panel-strong: rgba(12, 25, 29, 0.9);
-  --line: rgba(255, 255, 255, 0.14);
-  --text: #eafaf6;
-  --accent: #7ef2c4;
-  --accent-2: #7cc7ff;
-  --good: #a8ff9f;
-  --warning: #ffd166;
+  --bg-1: #07181b;
+  --bg-2: #0f2d30;
+  --panel: rgba(13, 19, 24, 0.72);
+  --panel-strong: rgba(15, 28, 31, 0.92);
+  --line: rgba(255, 255, 255, 0.12);
+  --text: #ebfff8;
+  --accent: #7cf0c4;
+  --accent-2: #7ec7ff;
+  --bonus: #ffd166;
   --danger: #ff6b6b;
+  --good: #a8ff9a;
 }
 
 * {
   box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
   margin: 0;
   min-height: 100%;
-  background: radial-gradient(circle at top, #173b3f 0%, var(--bg1) 38%, #050d10 100%);
+  background: radial-gradient(circle at top, #153d41 0%, var(--bg-1) 36%, #040b0d 100%);
   color: var(--text);
   font-family: Arial, Helvetica, sans-serif;
 }
@@ -30,8 +31,8 @@ body {
   align-items: center;
   justify-content: center;
   flex-direction: column;
+  gap: 14px;
   padding: 18px 20px 26px;
-  gap: 12px;
 }
 
 .hud {
@@ -39,31 +40,33 @@ body {
   display: flex;
   gap: 12px;
   justify-content: flex-start;
-  z-index: 10;
+  z-index: 5;
   pointer-events: none;
 }
 
 .card {
   min-width: 120px;
-  padding: 10px 14px;
-  background: rgba(11, 20, 22, 0.72);
+  padding: 10px 16px;
+  background: rgba(11, 18, 22, 0.74);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 14px;
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(8px);
 }
 
 .card span {
   display: block;
   font-size: 0.68rem;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   opacity: 0.7;
-  letter-spacing: 0.12em;
 }
 
 .card strong {
   display: block;
-  font-size: 1.45rem;
-  margin-top: 4px;
+  margin-top: 6px;
+  font-size: 1.55rem;
+  line-height: 1.2;
 }
 
 .status-card strong {
@@ -76,15 +79,15 @@ body {
   border-radius: 22px;
   overflow: hidden;
   border: 2px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
-  background: linear-gradient(180deg, #0a1c1d 0%, #0f2725 100%);
+  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.45);
+  background: linear-gradient(180deg, #091b1d 0%, #0c2021 100%);
 }
 
 #gameCanvas {
   display: block;
   width: 100%;
   height: 100%;
-  background: linear-gradient(180deg, #091718 0%, #0c1d1b 100%);
+  background: linear-gradient(180deg, #091c1d 0%, #0d1f1d 100%);
 }
 
 .controls-text {
@@ -92,7 +95,7 @@ body {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  color: rgba(234, 250, 246, 0.8);
+  color: rgba(234, 255, 248, 0.82);
   font-size: 0.96rem;
   padding: 0 4px;
 }
@@ -108,7 +111,6 @@ body {
   gap: 10px;
   flex-direction: column;
   align-items: center;
-  margin-top: 4px;
 }
 
 .mobile-controls .row {
@@ -117,15 +119,16 @@ body {
 }
 
 .dir-btn {
-  width: 56px;
-  height: 56px;
+  width: 58px;
+  height: 58px;
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(14, 26, 31, 0.74);
+  background: rgba(19, 30, 34, 0.7);
   color: var(--text);
   font-size: 1.4rem;
   font-weight: bold;
-  box-shadow: 0 12px 24px rgba(0,0,0,0.22);
+  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.22);
+  touch-action: manipulation;
 }
 
 .dir-btn:active {
@@ -134,13 +137,13 @@ body {
 
 @media (max-width: 760px) {
   body {
-    padding-top: 14px;
+    padding-top: 12px;
   }
 
   .hud {
     width: min(94vw, 520px);
-    flex-wrap: wrap;
     justify-content: center;
+    flex-wrap: wrap;
   }
 
   .game-shell {

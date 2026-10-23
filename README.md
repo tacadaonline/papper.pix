@@ -4,9 +4,9 @@ const scoreEl = document.getElementById('score');
 const bestEl = document.getElementById('best');
 const statusEl = document.getElementById('status');
 
-const WORLD = { width: 2200, height: 2200, cell: 28 };
+const WORLD = { width: 2200, height: 2200, cellSize: 28 };
 const keys = {};
-const palette = ['#7ef2c4', '#7cc7ff', '#ffd166', '#ff9f70', '#d6a5ff', '#ff6b6b'];
+const palette = ['#7cf0c4', '#7ec7ff', '#ffd166', '#ff9f70', '#d8b4ff', '#ff7a7a'];
 
 const state = {
   started: false,
@@ -21,6 +21,7 @@ const state = {
   cameraX: 0,
   cameraY: 0,
   audioCtx: null,
+  messageTimer: 0,
 };
 
 bestEl.textContent = String(state.best);
@@ -43,6 +44,35 @@ function wrap(value, limit) {
   return value;
 }
 
+function setStatus(text, color = '#7cf0c4') {
+  statusEl.textContent = text;
+  statusEl.style.color = color;
+}
+
+function playTone(freq = 520, duration = 0.06, volume = 0.04) {
+  const AudioCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtor) return;
+
+  if (!state.audioCtx) {
+    state.audioCtx = new AudioCtor();
+  }
+
+  const audioCtx = state.audioCtx;
+  const oscillator = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+
+  oscillator.type = 'triangle';
+  oscillator.frequency.value = freq;
+  gain.gain.value = volume;
+
+  oscillator.connect(gain);
+  gain.connect(audioCtx.destination);
+
+  oscillator.start();
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+  oscillator.stop(audioCtx.currentTime + duration);
+}
+
 function getInputVector() {
   let x = 0;
   let y = 0;
@@ -56,65 +86,32 @@ function getInputVector() {
   return { x: x / length, y: y / length };
 }
 
-function playTone(frequency = 420, duration = 0.06, volume = 0.03) {
-  if (typeof window === 'undefined') return;
-  const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  if (!AudioCtx) return;
-
-  if (!state.audioCtx) {
-    state.audioCtx = new AudioCtx();
-  }
-
-  const ctxAudio = state.audioCtx;
-  const oscillator = ctxAudio.createOscillator();
-  const gain = ctxAudio.createGain();
-
-  oscillator.type = 'triangle';
-  oscillator.frequency.value = frequency;
-  gain.gain.value = volume;
-
-  oscillator.connect(gain);
-  gain.connect(ctxAudio.destination);
-
-  oscillator.start();
-  gain.gain.exponentialRampToValueAtTime(0.0001, ctxAudio.currentTime + duration);
-  oscillator.stop(ctxAudio.currentTime + duration);
-}
-
 function createPlayer() {
-  const player = {
+  return {
     x: WORLD.width / 2,
     y: WORLD.height / 2,
     radius: 18,
-    baseSpeed: 230,
-    speed: 230,
-    color: '#7ef2c4',
+    speed: 210,
+    color: '#7cf0c4',
     trail: [{ x: WORLD.width / 2, y: WORLD.height / 2 }],
     alive: true,
     territory: new Set(),
     heading: { x: 1, y: 0 },
   };
-
-  for (let x = 0; x < WORLD.width; x += WORLD.cell) {
-    for (let y = 0; y < WORLD.height; y += WORLD.cell) {
-      player.territory.add(`${x},${y}`);
-    }
-  }
-
-  return player;
 }
 
 function createBot() {
-  const validRadius = 15 + Math.random() * 11;
+  const radius = 14 + Math.random() * 10;
   return {
     x: rand(80, WORLD.width - 80),
     y: rand(80, WORLD.height - 80),
-    radius: validRadius,
+    radius,
     color: palette[Math.floor(Math.random() * palette.length)],
-    speed: rand(112, 164),
-    target: null,
+    speed: rand(110, 165),
     alive: true,
     trail: [],
+    target: null,
+    drift: rand(0, Math.PI * 2),
   };
 }
 
@@ -122,7 +119,7 @@ function pelletAt(x, y, value = 1, type = 'normal') {
   return {
     x,
     y,
-    radius: type === 'bonus' ? 9 : 6,
+    radius: type === 'bonus' ? 11 : 7,
     value,
     type,
   };
@@ -130,26 +127,31 @@ function pelletAt(x, y, value = 1, type = 'normal') {
 
 function spawnPellet(type = 'normal') {
   let attempts = 0;
-  while (attempts < 200) {
-    const x = rand(40, WORLD.width - 40);
-    const y = rand(40, WORLD.height - 40);
-    const tooCloseToPlayer = state.player && distance({ x, y }, state.player) < 120;
-    const tooCloseToBots = state.bots.some((bot) => distance({ x, y }, bot) < 90);
-    if (!tooCloseToPlayer && !tooCloseToBots) {
+
+  while (attempts < 220) {
+    const x = rand(45, WORLD.width - 45);
+    const y = rand(45, WORLD.height - 45);
+
+    const tooCloseToPlayer = state.player && distance({ x, y }, state.player) < 150;
+    const tooCloseToBot = state.bots.some((bot) => distance({ x, y }, bot) < 120);
+
+    if (!tooCloseToPlayer && !tooCloseToBot) {
       return pelletAt(x, y, type === 'bonus' ? 4 : 1, type);
     }
+
     attempts += 1;
   }
+
   return pelletAt(rand(40, WORLD.width - 40), rand(40, WORLD.height - 40), type === 'bonus' ? 4 : 1, type);
 }
 
 function resetPellets() {
-  state.pellets = Array.from({ length: 180 }, () => spawnPellet('normal'));
+  state.pellets = Array.from({ length: 185 }, () => spawnPellet('normal'));
   state.bonus = null;
 }
 
 function resetBots() {
-  state.bots = Array.from({ length: 7 }, () => createBot());
+  state.bots = Array.from({ length: 8 }, () => createBot());
 }
 
 function updateHud() {
@@ -161,58 +163,63 @@ function updateHud() {
   bestEl.textContent = String(state.best);
 }
 
-function setStatus(text, color = '#7ef2c4') {
-  statusEl.textContent = text;
-  statusEl.style.color = color;
-}
-
 function resetGame() {
   state.player = createPlayer();
   state.score = 0;
   state.started = true;
   state.gameOver = false;
-  state.pellets = [];
-  state.bonus = null;
+  state.messageTimer = 0;
   resetPellets();
   resetBots();
   updateHud();
-  setStatus('Em jogo', '#7ef2c4');
+  setStatus('Em jogo', '#7cf0c4');
 }
 
 function endGame(reason) {
   state.gameOver = true;
   state.started = false;
   setStatus(reason, '#ff6b6b');
-  playTone(140, 0.2, 0.08);
+  playTone(150, 0.22, 0.06);
 }
 
 function cellKey(x, y) {
-  const cx = Math.floor(x / WORLD.cell);
-  const cy = Math.floor(y / WORLD.cell);
-  return `${cx},${cy}`;
+  return `${Math.floor(x / WORLD.cellSize)},${Math.floor(y / WORLD.cellSize)}`;
+}
+
+function isInsidePlayerTrail(entity) {
+  const trail = entity.trail || [];
+  for (let i = 0; i < trail.length; i += 1) {
+    if (distance(entity, trail[i]) < entity.radius + 7) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function updatePlayer(dt) {
   const player = state.player;
   const input = getInputVector();
-  const speedBoost = player.radius > 32 ? 0.9 : 1;
+  const speedFactor = clamp(1.2 - player.radius / 120, 0.55, 1.0);
 
   player.heading.x = input.x;
   player.heading.y = input.y;
 
-  player.x += input.x * player.baseSpeed * speedBoost * dt;
-  player.y += input.y * player.baseSpeed * speedBoost * dt;
+  player.x += input.x * player.speed * speedFactor * dt;
+  player.y += input.y * player.speed * speedFactor * dt;
   player.x = wrap(player.x, WORLD.width);
   player.y = wrap(player.y, WORLD.height);
 
-  if (player.trail.length === 0 || distance(player, player.trail[player.trail.length - 1]) > 7) {
+  if (player.trail.length === 0 || distance(player, player.trail[player.trail.length - 1]) > 8) {
     player.trail.push({ x: player.x, y: player.y });
-    if (player.trail.length > 2500) {
+    if (player.trail.length > 2200) {
       player.trail.shift();
     }
   }
 
-  for (let i = 0; i < player.trail.length - 10; i += 1) {
+  const territoryKey = cellKey(player.x, player.y);
+  player.territory.add(territoryKey);
+
+  for (let i = 0; i < player.trail.length - 12; i += 1) {
     if (distance(player, player.trail[i]) < player.radius + 7) {
       endGame('Você bateu no próprio rastro!');
       return;
@@ -221,65 +228,61 @@ function updatePlayer(dt) {
 
   for (let i = state.pellets.length - 1; i >= 0; i -= 1) {
     const pellet = state.pellets[i];
-    if (distance(player, pellet) < player.radius + pellet.radius + 1) {
-      player.radius = clamp(player.radius + 0.16 * pellet.value * 1.6, 16, 52);
+    if (distance(player, pellet) < player.radius + pellet.radius + 2) {
       state.score += pellet.value;
       state.pellets.splice(i, 1);
       state.pellets.push(spawnPellet('normal'));
-      if (Math.random() < 0.12) {
-        state.bonus = spawnPellet('bonus');
-      }
+      player.radius = clamp(player.radius + 0.4 * pellet.value, 18, 54);
       updateHud();
-      playTone(760, 0.04, 0.04);
+      playTone(900, 0.05, 0.04);
     }
   }
 
   if (state.bonus && distance(player, state.bonus) < player.radius + state.bonus.radius + 3) {
     state.score += state.bonus.value;
-    player.radius = clamp(player.radius + 1.8, 16, 52);
     state.bonus = null;
+    player.radius = clamp(player.radius + 2.6, 18, 54);
     updateHud();
-    playTone(980, 0.08, 0.05);
-  }
-
-  for (const bot of state.bots) {
-    if (bot.alive && distance(player, bot) < player.radius + bot.radius) {
-      endGame('Um rival te derrubou!');
-      return;
-    }
+    playTone(1200, 0.08, 0.06);
   }
 
   for (const bot of state.bots) {
     if (!bot.alive) continue;
+    if (distance(player, bot) < player.radius + bot.radius + 4) {
+      endGame('Um rival te derrubou!');
+      return;
+    }
+
     for (let i = 0; i < bot.trail.length; i += 1) {
       if (distance(player, bot.trail[i]) < player.radius + 7) {
-        endGame('Você colidiu com um rastro!');
+        endGame('Você encostou em um rastro inimigo!');
         return;
       }
     }
   }
-
-  const territoryKey = cellKey(player.x, player.y);
-  player.territory.add(territoryKey);
 }
 
-function getNearestPellet(entity) {
+function getNearestObjective(entity) {
   let target = null;
   let bestDistance = Infinity;
 
   for (const pellet of state.pellets) {
     const d = distance(entity, pellet);
     if (d < bestDistance) {
-      target = pellet;
       bestDistance = d;
+      target = pellet;
     }
   }
 
   if (state.bonus) {
     const d = distance(entity, state.bonus);
-    if (d < bestDistance * 0.75) {
+    if (d < bestDistance * 0.7) {
       target = state.bonus;
     }
+  }
+
+  if (!target) {
+    return { x: rand(100, WORLD.width - 100), y: rand(100, WORLD.height - 100) };
   }
 
   return target;
@@ -288,9 +291,9 @@ function getNearestPellet(entity) {
 function updateBot(bot, dt) {
   if (!bot.alive) return;
 
-  const target = getNearestPellet(bot) || { x: state.player.x, y: state.player.y };
-  const dx = target.x - bot.x;
-  const dy = target.y - bot.y;
+  const objective = getNearestObjective(bot);
+  const dx = objective.x - bot.x;
+  const dy = objective.y - bot.y;
   const length = Math.hypot(dx, dy) || 1;
 
   bot.x += (dx / length) * bot.speed * dt;
@@ -298,126 +301,122 @@ function updateBot(bot, dt) {
   bot.x = wrap(bot.x, WORLD.width);
   bot.y = wrap(bot.y, WORLD.height);
 
-  if (distance(bot, target) < bot.radius + 8) {
-    for (let i = state.pellets.length - 1; i >= 0; i -= 1) {
-      const pellet = state.pellets[i];
-      if (distance(bot, pellet) < bot.radius + pellet.radius + 2) {
-        state.pellets.splice(i, 1);
-        state.pellets.push(spawnPellet('normal'));
-        bot.radius = clamp(bot.radius + 0.22, 12, 48);
-        break;
-      }
-    }
-    if (state.bonus && distance(bot, state.bonus) < bot.radius + state.bonus.radius + 2) {
-      bot.radius = clamp(bot.radius + 0.8, 12, 48);
-      state.bonus = null;
+  const lastPoint = bot.trail[bot.trail.length - 1];
+  if (!lastPoint || distance(bot, lastPoint) > 9) {
+    bot.trail.push({ x: bot.x, y: bot.y });
+    if (bot.trail.length > 1000) {
+      bot.trail.shift();
     }
   }
 
-  bot.trail.push({ x: bot.x, y: bot.y });
-  if (bot.trail.length > 200) {
-    bot.trail.shift();
+  if (state.player && distance(bot, state.player) < bot.radius + state.player.radius + 5) {
+    bot.alive = false;
+    if (state.bots.every((opponent) => !opponent.alive)) {
+      state.bots = Array.from({ length: 8 }, () => createBot());
+    }
+    return;
   }
 
-  if (state.player) {
-    if (distance(bot, state.player) < bot.radius + state.player.radius + 6) {
+  for (let i = 0; i < bot.trail.length - 8; i += 1) {
+    if (distance(bot, bot.trail[i]) < bot.radius + 7) {
       bot.alive = false;
-      state.bots = state.bots.filter((item) => item.alive);
-      if (state.bots.length < 7) {
-        state.bots.push(createBot());
-      }
+      return;
     }
   }
 
-  for (const ownPoint of bot.trail.slice(0, -8)) {
-    if (distance(bot, ownPoint) < bot.radius + 8) {
-      bot.alive = false;
+  for (const pellet of state.pellets) {
+    if (distance(bot, pellet) < bot.radius + pellet.radius + 2) {
+      state.pellets = state.pellets.filter((item) => item !== pellet);
+      state.pellets.push(spawnPellet('normal'));
+      bot.radius = clamp(bot.radius + 0.2, 14, 48);
       break;
     }
   }
 
-  for (const otherBot of state.bots) {
-    if (otherBot === bot || !otherBot.alive) continue;
-    for (const point of otherBot.trail) {
-      if (distance(bot, point) < bot.radius + 8) {
-        bot.alive = false;
-        break;
-      }
-    }
-    if (!bot.alive) break;
+  if (state.bonus && distance(bot, state.bonus) < bot.radius + state.bonus.radius + 2) {
+    bot.radius = clamp(bot.radius + 0.8, 14, 48);
+    state.bonus = null;
   }
 }
 
-function updateBonus(dt) {
-  if (state.bonus) return;
-  state.bonus = spawnPellet('bonus');
+function updateBonus() {
+  if (!state.bonus && Math.random() < 0.012) {
+    state.bonus = spawnPellet('bonus');
+  }
+}
+
+function updateCamera() {
+  const player = state.player;
+  if (!player) return;
+
+  state.cameraX = clamp(player.x - canvas.width / 2, 0, WORLD.width - canvas.width);
+  state.cameraY = clamp(player.y - canvas.height / 2, 0, WORLD.height - canvas.height);
 }
 
 function drawGrid() {
-  const offsetX = state.cameraX;
-  const offsetY = state.cameraY;
-
   ctx.strokeStyle = 'rgba(255,255,255,0.06)';
   ctx.lineWidth = 1;
 
-  const startX = Math.floor(offsetX / WORLD.cell) * WORLD.cell;
-  const startY = Math.floor(offsetY / WORLD.cell) * WORLD.cell;
+  const startX = Math.floor(state.cameraX / WORLD.cellSize) * WORLD.cellSize;
+  const startY = Math.floor(state.cameraY / WORLD.cellSize) * WORLD.cellSize;
 
-  for (let x = startX; x < offsetX + canvas.width + WORLD.cell; x += WORLD.cell) {
+  for (let x = startX; x < state.cameraX + canvas.width + WORLD.cellSize; x += WORLD.cellSize) {
     ctx.beginPath();
-    ctx.moveTo(x - offsetX, 0);
-    ctx.lineTo(x - offsetX, canvas.height);
+    ctx.moveTo(x - state.cameraX, 0);
+    ctx.lineTo(x - state.cameraX, canvas.height);
     ctx.stroke();
   }
 
-  for (let y = startY; y < offsetY + canvas.height + WORLD.cell; y += WORLD.cell) {
+  for (let y = startY; y < state.cameraY + canvas.height + WORLD.cellSize; y += WORLD.cellSize) {
     ctx.beginPath();
-    ctx.moveTo(0, y - offsetY);
-    ctx.lineTo(canvas.width, y - offsetY);
+    ctx.moveTo(0, y - state.cameraY);
+    ctx.lineTo(canvas.width, y - state.cameraY);
     ctx.stroke();
   }
 }
 
 function drawTerritory() {
+  if (!state.player) return;
   const player = state.player;
-  if (!player) return;
 
-  ctx.fillStyle = 'rgba(126, 242, 196, 0.12)';
+  ctx.fillStyle = 'rgba(124, 240, 196, 0.12)';
   for (const key of player.territory) {
     const [cellX, cellY] = key.split(',').map(Number);
-    const x = cellX * WORLD.cell - state.cameraX;
-    const y = cellY * WORLD.cell - state.cameraY;
-    if (x < -WORLD.cell || y < -WORLD.cell || x > canvas.width + WORLD.cell || y > canvas.height + WORLD.cell) continue;
-    ctx.fillRect(x, y, WORLD.cell, WORLD.cell);
+    const x = cellX * WORLD.cellSize - state.cameraX;
+    const y = cellY * WORLD.cellSize - state.cameraY;
+    if (x < -WORLD.cellSize || x > canvas.width + WORLD.cellSize || y < -WORLD.cellSize || y > canvas.height + WORLD.cellSize) {
+      continue;
+    }
+    ctx.fillRect(x, y, WORLD.cellSize, WORLD.cellSize);
   }
 }
 
 function drawPellet(pellet) {
   const x = pellet.x - state.cameraX;
   const y = pellet.y - state.cameraY;
+
   ctx.beginPath();
-  ctx.fillStyle = pellet.type === 'bonus' ? '#ffd166' : '#f7f7d2';
+  ctx.fillStyle = pellet.type === 'bonus' ? '#ffd166' : '#f3f6d8';
   ctx.arc(x, y, pellet.radius, 0, Math.PI * 2);
   ctx.fill();
 
   if (pellet.type === 'bonus') {
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
     ctx.lineWidth = 2;
     ctx.arc(x, y, pellet.radius + 4, 0, Math.PI * 2);
     ctx.stroke();
   }
 }
 
-function drawTrail(points, color, width) {
-  if (points.length < 2) return;
+function drawTrail(trail, color, width) {
+  if (trail.length < 2) return;
 
   ctx.beginPath();
-  const first = points[0];
-  ctx.moveTo(first.x - state.cameraX, first.y - state.cameraY);
+  ctx.moveTo(trail[0].x - state.cameraX, trail[0].y - state.cameraY);
 
-  for (let i = 1; i < points.length; i += 1) {
-    const point = points[i];
+  for (let i = 1; i < trail.length; i += 1) {
+    const point = trail[i];
     ctx.lineTo(point.x - state.cameraX, point.y - state.cameraY);
   }
 
@@ -439,18 +438,10 @@ function drawEntity(entity, isPlayer = false) {
 
   if (isPlayer) {
     ctx.beginPath();
-    ctx.fillStyle = '#dffdf6';
-    ctx.arc(x + entity.radius * 0.35, y - entity.radius * 0.3, 3.2, 0, Math.PI * 2);
+    ctx.fillStyle = '#e9fff8';
+    ctx.arc(x + entity.radius * 0.32, y - entity.radius * 0.3, 3.2, 0, Math.PI * 2);
     ctx.fill();
   }
-}
-
-function updateCamera() {
-  const player = state.player;
-  if (!player) return;
-
-  state.cameraX = clamp(player.x - canvas.width / 2, 0, WORLD.width - canvas.width);
-  state.cameraY = clamp(player.y - canvas.height / 2, 0, WORLD.height - canvas.height);
 }
 
 function render() {
@@ -472,12 +463,12 @@ function render() {
 
   for (const bot of state.bots) {
     if (bot.alive) {
-      drawTrail(bot.trail, bot.color, Math.max(12, bot.radius * 1.6));
+      drawTrail(bot.trail, bot.color, Math.max(10, bot.radius * 1.4));
     }
   }
 
   if (state.player.alive) {
-    drawTrail(state.player.trail, '#7ef2c4', Math.max(12, state.player.radius * 1.9));
+    drawTrail(state.player.trail, '#7cf0c4', Math.max(10, state.player.radius * 1.7));
     drawEntity(state.player, true);
   }
 
@@ -488,25 +479,25 @@ function render() {
   }
 
   if (!state.started && !state.gameOver) {
-    ctx.fillStyle = 'rgba(0,0,0,0.38)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#f3fffc';
+    ctx.fillStyle = '#f2fff9';
     ctx.textAlign = 'center';
-    ctx.font = 'bold 42px Arial';
-    ctx.fillText('Paper Pix Arena', canvas.width / 2, canvas.height / 2 - 20);
+    ctx.font = 'bold 44px Arial';
+    ctx.fillText('Paper Pix Premium', canvas.width / 2, canvas.height / 2 - 18);
     ctx.font = '22px Arial';
-    ctx.fillText('Aperte espaço para começar', canvas.width / 2, canvas.height / 2 + 24);
+    ctx.fillText('Aperte espaço para começar', canvas.width / 2, canvas.height / 2 + 26);
   }
 
   if (state.gameOver) {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
     ctx.font = 'bold 46px Arial';
-    ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 20);
+    ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 18);
     ctx.font = '22px Arial';
-    ctx.fillText('Espaço para reiniciar', canvas.width / 2, canvas.height / 2 + 26);
+    ctx.fillText('Espaço para reiniciar', canvas.width / 2, canvas.height / 2 + 24);
   }
 }
 
@@ -516,7 +507,7 @@ function tick(timestamp) {
 
   if (state.started && !state.gameOver) {
     updatePlayer(dt);
-    updateBonus(dt);
+    updateBonus();
     for (const bot of state.bots) {
       updateBot(bot, dt);
     }
@@ -530,7 +521,7 @@ function handleKeyDown(event) {
   const key = event.key.toLowerCase();
   keys[key] = true;
 
-  if (event.key === ' ') {
+  if (event.code === 'Space') {
     event.preventDefault();
     if (!state.started || state.gameOver) {
       resetGame();
@@ -543,20 +534,20 @@ function handleKeyUp(event) {
   keys[key] = false;
 }
 
-function bindMobileButtons() {
+function bindMobileControls() {
   const buttons = document.querySelectorAll('.dir-btn');
   buttons.forEach((button) => {
-    const direction = button.dataset.key;
-    const key = direction.toLowerCase();
+    const key = button.dataset.key.toLowerCase();
 
-    button.addEventListener('pointerdown', () => {
+    const pointerDown = () => {
       keys[key] = true;
-    });
+    };
 
     const release = () => {
       keys[key] = false;
     };
 
+    button.addEventListener('pointerdown', pointerDown);
     button.addEventListener('pointerup', release);
     button.addEventListener('pointerleave', release);
     button.addEventListener('pointercancel', release);
@@ -565,9 +556,10 @@ function bindMobileButtons() {
 
 window.addEventListener('keydown', handleKeyDown);
 window.addEventListener('keyup', handleKeyUp);
-bindMobileButtons();
+bindMobileControls();
+
 state.player = createPlayer();
 resetPellets();
 resetBots();
-setStatus('Aguardando', '#7ef2c4');
+setStatus('Pronto', '#7cf0c4');
 requestAnimationFrame(tick);
