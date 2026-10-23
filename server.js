@@ -141,6 +141,7 @@ function distToSegment(px, py, x1, y1, x2, y2) {
   const dx = x2 - x1;
   const dy = y2 - y1;
   const lengthSq = dx * dx + dy * dy;
+
   if (lengthSq === 0) return Math.hypot(px - x1, py - y1);
 
   const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lengthSq));
@@ -149,37 +150,28 @@ function distToSegment(px, py, x1, y1, x2, y2) {
   return Math.hypot(px - projX, py - projY);
 }
 
-function segmentHitsPointTrail(trailPoints, headX, headY, threshold = 0.9) {
+function pointHitsTrailSegments(trailPoints, headX, headY, threshold = 0.95) {
+  if (trailPoints.length < 4) return false;
+
   for (let i = 1; i < trailPoints.length; i++) {
     const prev = trailPoints[i - 1];
     const next = trailPoints[i];
     const dist = distToSegment(headX, headY, prev.x, prev.y, next.x, next.y);
     if (dist < threshold) return true;
   }
+
   return false;
 }
 
-function trailIntersectsOwn(player, headX, headY) {
+function playerHitsOwnTrail(player, headX, headY) {
   if (player.trail.length < 6) return false;
-
-  const tail = player.trail.slice(0, -1);
-  if (tail.length < 2) return false;
-
-  for (let i = 1; i < tail.length; i++) {
-    const prev = tail[i - 1];
-    const next = tail[i];
-    const dist = distToSegment(headX, headY, prev.x, prev.y, next.x, next.y);
-    if (dist < 0.9) return true;
-  }
-
-  return false;
+  return pointHitsTrailSegments(player.trail.slice(0, -1), headX, headY, 0.85);
 }
 
-function trailIntersectsEnemy(player, headX, headY) {
+function playerHitsEnemyTrail(player, headX, headY) {
   for (const other of Object.values(gameState.players)) {
     if (!other || other.id === player.id || !other.alive || other.trail.length < 6) continue;
-
-    if (segmentHitsPointTrail(other.trail, headX, headY, 0.9)) {
+    if (pointHitsTrailSegments(other.trail.slice(0, -1), headX, headY, 0.8)) {
       return other.id;
     }
   }
@@ -218,10 +210,10 @@ function setTrailCell(player, x, y) {
 }
 
 function canSolidifyTrail(player) {
-  if (player.trail.length < 12) return false;
+  if (player.trail.length < 8) return false;
 
-  const recent = player.trail.slice(-18);
-  let touchesBase = 0;
+  const recent = player.trail.slice(-12);
+  let touchingBase = 0;
 
   recent.forEach((point) => {
     const row = Math.floor(point.y);
@@ -233,28 +225,51 @@ function canSolidifyTrail(player) {
         const c = col + dc;
         if (!inBounds(r, c)) continue;
         const cell = gameState.grid[keyFor(r, c)];
-        if (cell && cell.ownerId === player.id && cell.kind === 'base') touchesBase += 1;
+        if (cell && cell.ownerId === player.id && cell.kind === 'base') touchingBase += 1;
       }
     }
   });
 
-  return touchesBase >= 4;
+  return touchingBase >= 3;
 }
 
-function convertTrailToBase(player) {
-  const recent = player.trail.slice(-18);
-  if (!recent.length) return;
+function convertConnectedTrailToBase(player) {
+  const queue = [];
+  const visited = new Set();
 
-  recent.forEach((point) => {
-    const row = Math.floor(point.y);
-    const col = Math.floor(point.x);
-    const key = keyFor(row, col);
+  Object.keys(gameState.grid).forEach((key) => {
     const cell = gameState.grid[key];
-    if (cell && cell.ownerId === player.id && cell.kind === 'trail') {
-      cell.kind = 'base';
-      cell.color = player.color;
+    if (cell && cell.ownerId === player.id && cell.kind === 'base') {
+      const [row, col] = key.split(',').map(Number);
+      queue.push([row, col]);
     }
   });
+
+  while (queue.length) {
+    const [row, col] = queue.shift();
+    const key = keyFor(row, col);
+    if (visited.has(key)) continue;
+    visited.add(key);
+
+    const directions = [
+      [1,0], [-1,0], [0,1], [0,-1]
+    ];
+
+    directions.forEach(([dr, dc]) => {
+      const nr = row + dr;
+      const nc = col + dc;
+      if (!inBounds(nr, nc)) return;
+
+      const nextKey = keyFor(nr, nc);
+      const nextCell = gameState.grid[nextKey];
+
+      if (nextCell && nextCell.ownerId === player.id && nextCell.kind === 'trail') {
+        nextCell.kind = 'base';
+        nextCell.color = player.color;
+        queue.push([nr, nc]);
+      }
+    });
+  }
 
   updatePlayerScore(player.id);
 }
@@ -335,12 +350,12 @@ function stepPlayer(player) {
     return;
   }
 
-  if (trailIntersectsOwn(player, nextX, nextY)) {
+  if (playerHitsOwnTrail(player, nextX, nextY)) {
     killPlayer(player.id);
     return;
   }
 
-  const enemyId = trailIntersectsEnemy(player, nextX, nextY);
+  const enemyId = playerHitsEnemyTrail(player, nextX, nextY);
   if (enemyId) {
     killPlayer(player.id, enemyId);
     return;
@@ -350,14 +365,14 @@ function stepPlayer(player) {
   player.y = nextY;
   player.trail.push({ x: player.x, y: player.y });
 
-  if (player.trail.length > 1200) {
+  if (player.trail.length > 1400) {
     player.trail.shift();
   }
 
   setTrailCell(player, player.x, player.y);
 
   if (canSolidifyTrail(player)) {
-    convertTrailToBase(player);
+    convertConnectedTrailToBase(player);
   }
 
   updatePlayerScore(player.id);
@@ -432,5 +447,5 @@ server.listen(PORT, () => {
   console.log(`🚀 Papelio em evolução em http://localhost:${PORT}`);
 });
 
-module.exports = { gameState, killPlayer, stepPlayer, convertTrailToBase };
+module.exports = { gameState, killPlayer, stepPlayer, convertConnectedTrailToBase };
 
