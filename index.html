@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Paper Pix</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="hud">
+      <div class="card">
+        <span>Pontos</span>
+        <strong id="score">0</strong>
+      </div>
+      <div class="card">
+        <span>Melhor</span>
+        <strong id="best">0</strong>
+      </div>
+      <div class="card status-card">
+        <span>Status</span>
+        <strong id="status">Em jogo</strong>
+      </div>
+    </div>
+
+    <canvas id="gameCanvas" width="960" height="600"></canvas>
+
+    <div class="controls">
+      <p>Use W A S D ou setas para mover.</p>
+      <p>Coma os pontos e evite os rastros.</p>
+    </div>
+
+    <script src="game.js"></script>
+  </body>
+</html>
