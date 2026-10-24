@@ -55,7 +55,11 @@
       color-scheme: dark;
     }
 
-    html, body { height: 100%; }
+    html, body {
+      height: 100%;
+      margin: 0;
+    }
+
     body {
       box-sizing: border-box;
       position: relative;
@@ -65,10 +69,8 @@
       font-family: var(--body);
       padding-left: max(16px, env(safe-area-inset-left, 0px));
       padding-right: max(16px, env(safe-area-inset-right, 0px));
-      padding-block: 0;
       -webkit-user-select: none;
       user-select: none;
-      margin: 0;
     }
 
     #cv {
@@ -79,6 +81,7 @@
       display: block;
       touch-action: none;
       z-index: 0;
+      background: linear-gradient(180deg, var(--board), var(--wall));
     }
 
     .hud {
@@ -123,51 +126,6 @@
       font-weight: 600;
       color: var(--muted);
       font-variant-numeric: tabular-nums;
-    }
-
-    .lb {
-      width: min(190px, 46vw);
-    }
-
-    .lb ol {
-      list-style: none;
-      margin: 6px 0 0;
-      padding: 0;
-      display: grid;
-      gap: 4px;
-    }
-
-    .lb li {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 13px;
-      font-weight: 600;
-      min-width: 0;
-    }
-
-    .lb li i {
-      flex: none;
-      width: 10px;
-      height: 10px;
-      border-radius: 3px;
-    }
-
-    .lb li .nm {
-      flex: 1;
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .lb li b {
-      font-weight: 700;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .lb li.me {
-      color: var(--accent);
     }
 
     .overlay {
@@ -230,31 +188,9 @@
       font-size: 16px;
     }
 
-    .card .hint {
-      font-size: 13px;
-    }
-
-    #demo {
-      display: block;
-      width: 100%;
-      max-width: 230px;
-      height: auto;
-    }
-
     .field {
       display: grid;
-      gap: 6px;
-    }
-
-    .field input {
-      box-sizing: border-box;
-      width: 100%;
-      font: 600 16px var(--body);
-      color: var(--ink);
-      background: var(--field);
-      border: 1px solid var(--panel-line);
-      border-radius: 12px;
-      padding: 12px 14px;
+      gap: 10px;
     }
 
     .btn {
@@ -284,11 +220,6 @@
       border: 1px solid var(--panel-line);
     }
 
-    button:focus-visible, input:focus-visible {
-      outline: 3px solid var(--accent);
-      outline-offset: 2px;
-    }
-
     .stats {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -308,4 +239,383 @@
       font-family: var(--display);
       font-weight: 800;
       font-size: 18px;
-
+      line-height: 1.1;
+    }
+
+    .stats span {
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    @media (max-width: 520px) {
+      .stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="cv"></canvas>
+
+  <div class="hud" aria-live="polite">
+    <div class="panel stat">
+      <div class="label">Pontuação</div>
+      <div class="big" id="scoreValue">0</div>
+      <div class="sub">território</div>
+    </div>
+
+    <div class="panel stat">
+      <div class="label">Tempo</div>
+      <div class="big" id="timeValue">60</div>
+      <div class="sub">segundos</div>
+    </div>
+  </div>
+
+  <div id="overlay" class="overlay">
+    <div class="card">
+      <h1>Cercado</h1>
+      <p class="lead">Conquiste o território, evite os invasores e mantenha seu domínio.</p>
+      <div class="stats">
+        <div>
+          <span>Melhor</span>
+          <b id="bestValue">0</b>
+        </div>
+        <div>
+          <span>Fase</span>
+          <b id="levelValue">1</b>
+        </div>
+        <div>
+          <span>Meta</span>
+          <b id="targetValue">18</b>
+        </div>
+      </div>
+      <div class="field">
+        <button id="startBtn" class="btn">Iniciar partida</button>
+        <button id="themeBtn" class="btn ghost">Tema</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('cv');
+    const ctx = canvas.getContext('2d');
+
+    const scoreValueEl = document.getElementById('scoreValue');
+    const timeValueEl = document.getElementById('timeValue');
+    const bestValueEl = document.getElementById('bestValue');
+    const levelValueEl = document.getElementById('levelValue');
+    const targetValueEl = document.getElementById('targetValue');
+    const overlayEl = document.getElementById('overlay');
+    const startBtn = document.getElementById('startBtn');
+    const themeBtn = document.getElementById('themeBtn');
+
+    const state = {
+      running: false,
+      score: 0,
+      best: Number(localStorage.getItem('cercado-best') || 0),
+      level: 1,
+      target: 18,
+      timeLeft: 60,
+      lastTime: 0,
+      keys: { up: false, down: false, left: false, right: false },
+      player: { x: 0, y: 0, radius: 12, color: '#2f6bff' },
+      enemies: [],
+      cells: [],
+      cellSize: 34,
+      boardCols: 0,
+      boardRows: 0,
+      lastTouch: null
+    };
+
+    function setTheme() {
+      const root = document.documentElement;
+      const current = root.getAttribute('data-theme');
+      root.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+    }
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      state.cellSize = Math.min(canvas.width, canvas.height) / 12;
+      state.boardCols = Math.max(7, Math.floor(canvas.width / state.cellSize));
+      state.boardRows = Math.max(7, Math.floor(canvas.height / state.cellSize));
+      if (state.running) {
+        ensurePlayerInBounds();
+      }
+    }
+
+    function clamp(value, min, max) {
+      return Math.min(Math.max(value, min), max);
+    }
+
+    function randomBetween(min, max) {
+      return Math.random() * (max - min) + min;
+    }
+
+    function resetBoard() {
+      state.cells = [];
+      for (let row = 0; row < state.boardRows; row++) {
+        for (let col = 0; col < state.boardCols; col++) {
+          state.cells.push({
+            x: col,
+            y: row,
+            claimed: false,
+            pulse: Math.random() * Math.PI * 2
+          });
+        }
+      }
+    }
+
+    function resetGame() {
+      state.score = 0;
+      state.level = 1;
+      state.target = 18;
+      state.timeLeft = 60;
+      state.player.x = Math.floor(state.boardCols / 2);
+      state.player.y = Math.floor(state.boardRows / 2);
+      state.enemies = [];
+      resetBoard();
+      claimCell(state.player.x, state.player.y);
+      spawnEnemies(3);
+      updateHud();
+    }
+
+    function updateHud() {
+      scoreValueEl.textContent = String(state.score);
+      timeValueEl.textContent = String(Math.max(0, Math.ceil(state.timeLeft)));
+      bestValueEl.textContent = String(state.best);
+      levelValueEl.textContent = String(state.level);
+      targetValueEl.textContent = String(state.target);
+    }
+
+    function ensurePlayerInBounds() {
+      state.player.x = clamp(state.player.x, 0, state.boardCols - 1);
+      state.player.y = clamp(state.player.y, 0, state.boardRows - 1);
+    }
+
+    function claimCell(x, y) {
+      const cell = state.cells.find((item) => item.x === x && item.y === y);
+      if (!cell) return;
+      if (!cell.claimed) {
+        cell.claimed = true;
+        state.score += 1;
+        if (state.score >= state.target) {
+          state.level += 1;
+          state.target = Math.round(state.target * 1.5 + 6);
+          state.timeLeft += 12;
+          state.best = Math.max(state.best, state.score);
+          localStorage.setItem('cercado-best', String(state.best));
+        }
+        updateHud();
+      }
+    }
+
+    function spawnEnemies(count) {
+      state.enemies = [];
+      for (let i = 0; i < count; i++) {
+        let x = 0;
+        let y = 0;
+        do {
+          x = Math.floor(Math.random() * state.boardCols);
+          y = Math.floor(Math.random() * state.boardRows);
+        } while ((x === state.player.x && y === state.player.y) || state.cells.some((cell) => cell.x === x && cell.y === y && cell.claimed));
+
+        state.enemies.push({
+          x,
+          y,
+          vx: (Math.random() - 0.5) * 1.7,
+          vy: (Math.random() - 0.5) * 1.7,
+          radius: 11,
+          color: i % 2 === 0 ? '#ff5f57' : '#ffb703'
+        });
+      }
+    }
+
+    function movePlayer(dx, dy) {
+      if (!state.running) return;
+      state.player.x += dx;
+      state.player.y += dy;
+      ensurePlayerInBounds();
+      claimCell(Math.round(state.player.x), Math.round(state.player.y));
+    }
+
+    function startGame() {
+      resetGame();
+      state.running = true;
+      overlayEl.style.display = 'none';
+    }
+
+    function endGame() {
+      state.running = false;
+      state.best = Math.max(state.best, state.score);
+      localStorage.setItem('cercado-best', String(state.best));
+      updateHud();
+      overlayEl.style.display = 'grid';
+      const title = overlayEl.querySelector('h1');
+      const lead = overlayEl.querySelector('.lead');
+      title.textContent = 'Fim de partida';
+      lead.textContent = `Você marcou ${state.score} pontos. Tente novamente e domine mais território.`;
+      startBtn.textContent = 'Jogar de novo';
+    }
+
+    function handleKeyMovement() {
+      const speed = 1;
+      if (state.keys.left) movePlayer(-speed, 0);
+      if (state.keys.right) movePlayer(speed, 0);
+      if (state.keys.up) movePlayer(0, -speed);
+      if (state.keys.down) movePlayer(0, speed);
+    }
+
+    function updateEnemies(dt) {
+      for (const enemy of state.enemies) {
+        const dx = state.player.x - enemy.x;
+        const dy = state.player.y - enemy.y;
+        const dist = Math.hypot(dx, dy) || 1;
+
+        enemy.x += (dx / dist) * dt * 0.8;
+        enemy.y += (dy / dist) * dt * 0.8;
+
+        if (enemy.x < 0) enemy.x = 0;
+        if (enemy.x > state.boardCols - 1) enemy.x = state.boardCols - 1;
+        if (enemy.y < 0) enemy.y = 0;
+        if (enemy.y > state.boardRows - 1) enemy.y = state.boardRows - 1;
+
+        if (Math.abs(state.player.x - enemy.x) < 1 && Math.abs(state.player.y - enemy.y) < 1) {
+          endGame();
+          return;
+        }
+      }
+    }
+
+    function update(dt) {
+      if (!state.running) return;
+
+      state.timeLeft -= dt;
+      updateHud();
+
+      handleKeyMovement();
+      updateEnemies(dt * 60);
+
+      if (state.timeLeft <= 0) {
+        endGame();
+      }
+    }
+
+    function drawCell(cell, px, py, size) {
+      const base = cell.claimed ? '#2f6bff' : '#dfeafc';
+      const alpha = cell.claimed ? 0.9 : 0.26;
+      ctx.fillStyle = base;
+      ctx.globalAlpha = alpha;
+      ctx.fillRect(px, py, size, size);
+      ctx.globalAlpha = 1;
+
+      ctx.strokeStyle = 'rgba(20,26,42,0.12)';
+      ctx.strokeRect(px + 0.5, py + 0.5, size - 1, size - 1);
+
+      if (!cell.claimed) {
+        const pulse = 0.5 + Math.sin(cell.pulse + performance.now() * 0.003) * 0.15;
+        ctx.fillStyle = `rgba(47,107,255,${0.12 + pulse * 0.08})`;
+        ctx.fillRect(px + 5, py + 5, size - 10, size - 10);
+      }
+    }
+
+    function drawBoard() {
+      const size = state.cellSize;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      for (const cell of state.cells) {
+        const px = cell.x * size + 12;
+        const py = cell.y * size + 64;
+        drawCell(cell, px, py, size - 2);
+      }
+
+      for (const enemy of state.enemies) {
+        const x = enemy.x * size + size / 2 + 12;
+        const y = enemy.y * size + size / 2 + 64;
+        ctx.beginPath();
+        ctx.fillStyle = enemy.color;
+        ctx.arc(x, y, enemy.radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      const px = state.player.x * size + size / 2 + 12;
+      const py = state.player.y * size + size / 2 + 64;
+      ctx.beginPath();
+      ctx.fillStyle = state.player.color;
+      ctx.arc(px, py, state.player.radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+      ctx.lineWidth = 3;
+      ctx.arc(px, py, state.player.radius + 6, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    function loop(ts) {
+      const dt = Math.min(0.033, (ts - state.lastTime) / 1000 || 0.016);
+      state.lastTime = ts;
+      update(dt);
+      drawBoard();
+      requestAnimationFrame(loop);
+    }
+
+    function onPointerMove(event) {
+      const rect = canvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const cellX = Math.floor((x - 12) / state.cellSize);
+      const cellY = Math.floor((y - 64) / state.cellSize);
+      if (cellX >= 0 && cellY >= 0 && cellX < state.boardCols && cellY < state.boardRows) {
+        state.player.x = clamp(cellX, 0, state.boardCols - 1);
+        state.player.y = clamp(cellY, 0, state.boardRows - 1);
+      }
+    }
+
+    document.addEventListener('keydown', (event) => {
+      const key = event.key.toLowerCase();
+      if (key === 'arrowleft' || key === 'a') state.keys.left = true;
+      if (key === 'arrowright' || key === 'd') state.keys.right = true;
+      if (key === 'arrowup' || key === 'w') state.keys.up = true;
+      if (key === 'arrowdown' || key === 's') state.keys.down = true;
+    });
+
+    document.addEventListener('keyup', (event) => {
+      const key = event.key.toLowerCase();
+      if (key === 'arrowleft' || key === 'a') state.keys.left = false;
+      if (key === 'arrowright' || key === 'd') state.keys.right = false;
+      if (key === 'arrowup' || key === 'w') state.keys.up = false;
+      if (key === 'arrowdown' || key === 's') state.keys.down = false;
+    });
+
+    canvas.addEventListener('pointerdown', (event) => {
+      state.lastTouch = { x: event.clientX, y: event.clientY };
+      onPointerMove(event);
+    });
+
+    canvas.addEventListener('pointermove', (event) => {
+      if (state.lastTouch && (event.pressure || event.buttons === 1)) {
+        onPointerMove(event);
+      }
+    });
+
+    canvas.addEventListener('pointerup', () => {
+      state.lastTouch = null;
+    });
+
+    startBtn.addEventListener('click', startGame);
+    themeBtn.addEventListener('click', setTheme);
+
+    window.addEventListener('resize', resizeCanvas);
+
+    document.documentElement.setAttribute('data-theme', 'light');
+    resizeCanvas();
+    resetGame();
+    overlayEl.style.display = 'grid';
+    updateHud();
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
